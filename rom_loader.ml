@@ -18,7 +18,7 @@ type rom_config = {
 type rom = {
     config : rom_config;
     prg_rom : int array;
-    chr_rom : int array option;
+    chr_rom : int array;
     trainer : int array option;
 }
 
@@ -66,6 +66,11 @@ let load_rom path =
     if config.mapper_nb != 0 then
         raise (Invalid_ROM "Unsupported mapper")
         ;
+    Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
+    Printf.printf "CHR ROM is %d bytes\n" config.chr_rom_size;
+    Printf.printf "PRG RAM : %B\n" config.prg_ram_present;
+    Printf.printf "TV system : %s\n"
+        (if config.tv_system then "PAL" else "NTSC");
     let cur_address = ref 0x10 in
     let trainer = if not config.trainer then None else (
         cur_address := !cur_address + 0x200;
@@ -73,11 +78,8 @@ let load_rom path =
     ) in
     let prg_rom = Array.sub rom !cur_address config.prg_rom_size in
     cur_address := !cur_address + config.prg_rom_size ;
-    let chr_rom = if config.chr_rom_size = 0 then None else (
-        let r = Array.sub rom !cur_address config.chr_rom_size in
-        cur_address := !cur_address + config.chr_rom_size;
-        Some r
-    ) in
+    let chr_rom = Array.sub rom !cur_address config.chr_rom_size in
+    cur_address := !cur_address + config.chr_rom_size;
     (* ignored PRG_RAM, Playchoices data, title *)
     {
         config = config;
