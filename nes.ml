@@ -35,6 +35,8 @@ let rec main_loop frame limit =
 let start_main_loop = main_loop 0
 
 let main =
+    Graphics.open_graph "";
+    Graphics.resize_window 256 240;
     if Array.length Sys.argv > 1 then
         load_rom_memory Sys.argv.(1)
     else Printf.printf "No ROM provided\n"
@@ -43,7 +45,8 @@ let main =
     Cpu.processor_status := 0x34 ;
     Cpu.program_counter := (Cpu.memory.(0xFFFD) lsl 8) lor Cpu.memory.(0xFFFC) ;
 (*    (try  *)
-       start_main_loop 1000;
+       start_main_loop (-1);
 (*     with _ -> dump_all_memory (); raise Crash); *)
     Printf.printf "End of program. Memory dumped\n";
-    dump_all_memory ()
+    dump_all_memory ();
+    Ppu.display ()

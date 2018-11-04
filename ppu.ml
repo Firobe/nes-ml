@@ -43,13 +43,12 @@ let nth_bit b n =
 
 let set_register addr v =
     let register = addr land 0x7 in
-(*     Printf.printf "Register %d <- 0x%X\n" register v; *)
     match register with
     | 0 -> (* Control register *)
-        base_nametable_address := v land 0x3;
+        base_nametable_address := 0x2000 lor ((v land 0x3) lsl 10);
         ppudata_increment := if nth_bit v 2 then 32 else 1;
-        sprite_pattern_address := if (nth_bit v 3) then 0x0 else 0x1000;
-        background_pattern_address := if (nth_bit v 4) then 0x0 else 0x1000;
+        sprite_pattern_address := if (nth_bit v 3) then 0x1000 else 0x0;
+        background_pattern_address := if (nth_bit v 4) then 0x1000 else 0x0;
         sprite_size := nth_bit v 5;
         master_slave_mode := nth_bit v 6;
         nmi_enabled := nth_bit v 7
@@ -85,7 +84,6 @@ let set_register addr v =
 
 let get_register addr =
     let register = addr land 0x7 in
-(*     Printf.printf "Register %d -> read\n" register; *)
     match register with
     | 2 -> (* Status register *)
         latch := true;
@@ -107,4 +105,106 @@ let dump_memory () =
     output file store 0 (Bytes.length store) ;
     close_out file
 
-let render () = ()
+let screen = Array.make_matrix 256 240 0
+
+let palette_l = [84;84;84;0;30;116;8;16;144;48;0;136;68;0;100;92;0;48;84;4;0;60;24;0;32;42;0;8;58;0;0;64;0;0;60;0;0;50;60;0;0;0;0;0;0;0;0;0;152;150;152;8;76;196;48;50;236;92;30;228;136;20;176;160;20;100;152;34;32;120;60;0;84;90;0;40;114;0;8;124;0;0;118;40;0;102;120;0;0;0;0;0;0;0;0;0;236;238;236;76;154;236;120;124;236;176;98;236;228;84;236;236;88;180;236;106;100;212;136;32;160;170;0;116;196;0;76;208;32;56;204;108;56;180;204;60;60;60;0;0;0;0;0;0;236;238;236;168;204;236;188;188;236;212;178;236;236;174;236;236;174;212;236;180;176;228;196;144;204;210;120;180;222;120;168;226;144;152;226;180;160;214;228;160;162;160;0;0;0;0;0;0]
+
+let palette = Array.of_list palette_l
+
+let get_color c =
+    let n = c land 0x3F in
+    let r = palette.(n * 3) in
+    let g = palette.(n * 3 + 1) in
+    let b = palette.(n * 3 + 2) in
+    (r, g, b)
+
+let decode_chr start tile_nb x y =
+    let chr_base = start + tile_nb * 0x10 in
+    let x_mod = x mod 8 in
+    let y_mod = y mod 8 in
+    let low_byte = memory.(chr_base + y_mod) in
+    let high_byte = memory.(chr_base + 0x8 + y_mod) in
+    let mask = 1 lsl (7 - x_mod) in
+    let low_bit = int_of_bool (low_byte land mask != 0) in
+    let high_bit = int_of_bool (high_byte land mask != 0) in
+    low_bit lor (high_bit lsl 1)
+
+let render_background_pixel x y =
+    let x_tile = x / 8 in
+    let y_tile = y / 8 in
+    let offset = y_tile * 0x20 + x_tile in
+    let tile_kind = memory.(!base_nametable_address + offset) in
+    let color_nb = decode_chr !background_pattern_address tile_kind x y in
+    match color_nb with
+    | 0 -> memory.(0x3F00)
+    | _ ->
+        (* Decode attribute table *)
+        let attr_table_address = !base_nametable_address + 0x3C0 in
+        let x_big = x_tile / 4 in
+        let y_big = y_tile / 4 in
+        let big_addr = attr_table_address + y_big * 8 + x_big in (* 23C9 *)
+        let big_byte = memory.(big_addr) in (* AA : 10101010 *)
+        let block_offset = (((x / 16) mod 2) + 2 * ((y / 16) mod 2)) * 2 in
+        let palette_nb = (big_byte lsr block_offset) land 0x3 in
+        (* Get palette *)
+        let address = 0x3F00 + palette_nb * 4 + color_nb in
+        memory.(address)
+
+let render_background () =
+    for y = 0 to 239 do
+        for x = 0 to 255 do
+            screen.(x).(y) <- render_background_pixel x y;
+        done
+    done
+
+let render_sprite nb =
+    if !sprite_size then Printf.printf "Unsupported 8x16 sprites\n";
+    let ypos = oam.(nb) in
+    let xpos = oam.(nb + 3) in
+    let attributes = oam.(nb + 2) in
+    let tile_nb = oam.(nb + 1) in
+    let palette = attributes land 0x3 in
+    let flip_h = nth_bit attributes 6 in
+    let flip_v = nth_bit attributes 7 in
+    let palette_addr = 0x3F10 + palette * 4 in
+    for y = 0 to 7 do
+        if ypos + y < 240 then
+            for x = 0 to 7 do
+                if xpos + x < 256 then
+                    let fx = if flip_h then 7 - x else x in
+                    let fy = if flip_v then 7 - y else y in
+                    let color_nb = decode_chr !sprite_pattern_address
+                        tile_nb fx fy in
+                    if color_nb != 0  then
+                        let color =  memory.(palette_addr + color_nb) in
+                        screen.(x + xpos).(y + ypos) <- color
+            done
+    done
+
+let rec render_sprites after_back nb =
+    if nb != 256 && (oam.(nb + 2) land 0x20 != 0) != after_back then (
+        render_sprite nb;
+        render_sprites after_back (nb + 4)
+    )
+
+let display () =
+    Graphics.auto_synchronize false;
+    Graphics.clear_graph ();
+    for y = 0 to 239 do
+        for x = 0 to 255 do
+            let r, g, b = get_color screen.(x).(y) in
+            let col = Graphics.rgb r g b in
+            Graphics.set_color col;
+            Graphics.plot x (240 - y)
+        done
+    done;
+    Graphics.synchronize ()
+
+let render () =
+    if !show_sprites then
+        render_sprites false 0;
+    if !show_background then
+        render_background ();
+    if !show_sprites then
+        render_sprites true 0;
+    display ()
