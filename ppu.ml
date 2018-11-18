@@ -106,8 +106,6 @@ let dump_memory () =
     output file store 0 (Bytes.length store) ;
     close_out file
 
-let screen = Array.make_matrix 256 240 0
-
 let decode_chr start tile_nb x y =
     let chr_base = start + tile_nb * 0x10 in
     let x_mod = x mod 8 in
@@ -143,7 +141,7 @@ let render_background_pixel x y =
 let render_background () =
     for y = 0 to 239 do
         for x = 0 to 255 do
-            screen.(x).(y) <- render_background_pixel x y;
+            Display.set_pixel x y @@ render_background_pixel x y
         done
     done
 
@@ -167,7 +165,7 @@ let render_sprite nb =
                         tile_nb fx fy in
                     if color_nb != 0  then
                         let color =  memory.(palette_addr + color_nb) in
-                        screen.(x + xpos).(y + ypos) <- color
+                        Display.set_pixel (x + xpos) (y + ypos) color
             done
     done
 
@@ -185,7 +183,7 @@ let render () =
         render_background ();
     if !show_sprites then
         render_sprites true 0;
-    Display.display screen;
+    Display.display ();
     vblank_enabled := true
 
 let init () =

@@ -41,5 +41,5 @@ let main =
     Cpu.stack_pointer := 0xFD ;
     Cpu.processor_status := 0x34 ;
     Cpu.program_counter := (Cpu.memory.(0xFFFD) lsl 8) lor Cpu.memory.(0xFFFC) ;
-    start_main_loop 100;
+    start_main_loop (-1);
     Ppu.exit ()
