@@ -21,7 +21,8 @@ let rec cpu_exec_n_cycles n =
     )
 
 let rec main_loop frame limit =
-    if frame != limit then (
+    Input.get_inputs ();
+    if frame != limit && (Input.continue ()) then (
         Ppu.render ();
         if !Ppu.nmi_enabled then (
             Cpu.interrupt ()
