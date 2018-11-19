@@ -26,10 +26,9 @@ let sdl_get = function
     | Error _ -> failwith "Unknown SDL error encountered"
     | Ok obj -> obj
 
-let clear_screen () =
-    let r = Option.get !renderer in
-    sdl_get @@ Sdl.set_render_draw_color r 0 0 0 255 ;
-    sdl_get @@ Sdl.render_clear r
+let clear_screen back_color =
+    let rgb_color = palette.(back_color) in
+    Array1.fill screen rgb_color
 
 let display () =
     let rend = Option.get !renderer in
@@ -38,8 +37,6 @@ let display () =
         None Int32 in
     Array1.blit screen pixels;
     Sdl.unlock_texture text;
-(*     clear_screen (); *)
-    Array1.fill screen Int32.zero;
     sdl_get @@ Sdl.render_copy rend text ;
     Sdl.render_present rend
 
@@ -52,8 +49,7 @@ let init () =
         Sdl.Texture.access_streaming ~w:256 ~h:240 in
     window := Some win ;
     renderer := Some r ;
-    texture := Some text ;
-    clear_screen ()
+    texture := Some text
 
 let exit () =
     Option.may Sdl.destroy_texture !texture;

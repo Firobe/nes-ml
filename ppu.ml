@@ -180,6 +180,7 @@ let rec render_sprites after_back nb =
 
 let render () =
     vblank_enabled := false;
+    Display.clear_screen memory.(0x3F00);
     if !show_sprites then
         render_sprites false 0;
     if !show_background then
