@@ -9,7 +9,7 @@ let horizontal_scroll = ref 0
 let vertical_scroll = ref 0
 
 (* Control register *)
-let base_nametable_address = ref 0x2000
+let base_nametable = ref 0x2000
 let ppudata_increment = ref 0x1
 let sprite_pattern_address = ref 0x0
 let background_pattern_address = ref 0x0
@@ -47,7 +47,7 @@ let set_register addr v =
     let register = addr land 0x7 in
     match register with
     | 0 -> (* Control register *)
-        base_nametable_address := v land 0x3;
+        base_nametable := v land 0x3;
         ppudata_increment := if nth_bit v 2 then 32 else 1;
         sprite_pattern_address := if (nth_bit v 3) then 0x1000 else 0x0;
         background_pattern_address := if (nth_bit v 4) then 0x1000 else 0x0;
@@ -119,9 +119,8 @@ let decode_chr start tile_nb x y =
     low_bit lor (high_bit lsl 1)
 
 let get_address x y =
-    (* base_nametable : 0, 1, 2, 3 *)
-    let x_add = x + 32 * (!base_nametable_address land 1) in
-    let y_add = y + 30 * (!base_nametable_address lsr 1) in 
+    let x_add = x + 32 * (!base_nametable land 1) in
+    let y_add = y + 30 * (!base_nametable lsr 1) in 
     let x_mir = x_add mod (if !mirroring_mode then 64 else 32) in
     let y_mir = y_add mod (if !mirroring_mode then 30 else 60) in
     let quad_nb = (y_mir / 30) * 2 + (x_mir / 32) in
@@ -145,7 +144,8 @@ let render_background_pixel x y =
     | 0 -> None
     | _ ->
         (* Decode attribute table *)
-        let attr_table_address = !base_nametable_address + 0x3C0 in
+        let base_addr = !base_nametable * 0x400 + 0x2000 in
+        let attr_table_address = base_addr + 0x3C0 in
         let x_big = x_tile / 4 in
         let y_big = y_tile / 4 in
         let big_addr = attr_table_address + y_big * 8 + x_big in
