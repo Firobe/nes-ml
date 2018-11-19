@@ -61,7 +61,6 @@ let set_register addr v =
         emph_red := nth_bit v 5;
         emph_green := nth_bit v 6;
         emph_blue := nth_bit v 7
-    | 2 -> assert false
     | 3 -> (* OAM address *)
         oam_address := v
     | 4 -> (* OAM data *)
@@ -124,7 +123,7 @@ let render_background_pixel x y =
     let tile_kind = memory.(!base_nametable_address + offset) in
     let color_nb = decode_chr !background_pattern_address tile_kind x y in
     match color_nb with
-    | 0 -> memory.(0x3F00)
+    | 0 -> (*memory.(0x3F00)*) None
     | _ ->
         (* Decode attribute table *)
         let attr_table_address = !base_nametable_address + 0x3C0 in
@@ -136,12 +135,12 @@ let render_background_pixel x y =
         let palette_nb = (big_byte lsr block_offset) land 0x3 in
         (* Get palette *)
         let address = 0x3F00 + palette_nb * 4 + color_nb in
-        memory.(address)
+        Some memory.(address)
 
 let render_background () =
     for y = 0 to 239 do
         for x = 0 to 255 do
-            Display.set_pixel x y @@ render_background_pixel x y
+            Option.may (Display.set_pixel x y) (render_background_pixel x y)
         done
     done
 
@@ -170,10 +169,12 @@ let render_sprite nb =
     done
 
 let rec render_sprites after_back nb =
-    if nb != 256 && (oam.(nb + 2) land 0x20 != 0) != after_back then (
-        render_sprite nb;
+    if nb != 256 then (
+        if ((oam.(nb + 2) land 0x20 != 0) != after_back) then
+            render_sprite nb
+        ;
         render_sprites after_back (nb + 4)
-    )
+   )
 
 let render () =
     vblank_enabled := false;

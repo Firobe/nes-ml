@@ -3,7 +3,7 @@ open Bigarray
 
 let width = 256
 let height = 240
-let scale = 2
+let scale = 4
 
 let s_width = scale * width
 let s_height = scale * height
@@ -38,7 +38,8 @@ let display () =
         None Int32 in
     Array1.blit screen pixels;
     Sdl.unlock_texture text;
-    clear_screen ();
+(*     clear_screen (); *)
+    Array1.fill screen Int32.zero;
     sdl_get @@ Sdl.render_copy rend text ;
     Sdl.render_present rend
 
