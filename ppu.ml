@@ -116,21 +116,26 @@ let decode_chr start tile_nb x y =
     let high_bit = int_of_bool (high_byte land mask != 0) in
     low_bit lor (high_bit lsl 1)
 
+let get_address x y =
+    let quad_nb = (y / 30) * 2 + (x / 32) in
+    let base = !base_nametable_address + 0x400 * quad_nb in
+    base + (y mod 30) * 32 + (x mod 32)
+
 let render_background_pixel x y =
     let x_tile = x / 8 in
     let y_tile = y / 8 in
-    let offset = y_tile * 0x20 + x_tile in
-    let tile_kind = memory.(!base_nametable_address + offset) in
+    let address = get_address x_tile y_tile in
+    let tile_kind = memory.(address) in
     let color_nb = decode_chr !background_pattern_address tile_kind x y in
     match color_nb with
-    | 0 -> (*memory.(0x3F00)*) None
+    | 0 -> None
     | _ ->
         (* Decode attribute table *)
         let attr_table_address = !base_nametable_address + 0x3C0 in
         let x_big = x_tile / 4 in
         let y_big = y_tile / 4 in
-        let big_addr = attr_table_address + y_big * 8 + x_big in (* 23C9 *)
-        let big_byte = memory.(big_addr) in (* AA : 10101010 *)
+        let big_addr = attr_table_address + y_big * 8 + x_big in
+        let big_byte = memory.(big_addr) in
         let block_offset = (((x / 16) mod 2) + 2 * ((y / 16) mod 2)) * 2 in
         let palette_nb = (big_byte lsr block_offset) land 0x3 in
         (* Get palette *)
