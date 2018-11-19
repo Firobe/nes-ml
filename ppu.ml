@@ -81,7 +81,7 @@ let set_register addr v =
     | 7 -> (* PPU data *)
         Array.set memory !ppu_address v;
         ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
-    | _ -> assert false
+    | _ -> Printf.printf "Warning: trying to set 0x800%d\n" register
 
 let get_register addr =
     let register = addr land 0x7 in
@@ -96,7 +96,7 @@ let get_register addr =
     | 7 -> (* PPU data *)
         let r = Array.get memory !ppu_address in
         ppu_address := !ppu_address + !ppudata_increment; r
-    | _ -> Printf.printf "Warning: trying to read 0x800%d\n%!" register; 0
+    | _ -> Printf.printf "Warning: trying to read 0x800%d\n" register; 0
 
 let dump_memory () =
     let file = open_out_bin "memdump_vram" in

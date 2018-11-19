@@ -55,9 +55,7 @@ let read_header rom  =
         mapper_nb = (rom.(6) lsr 4) lor (rom.(7) land 0xF0);
         tv_system = nth_bit rom.(9) 0;
     } in
-    Array.iter (fun c -> if c != 0 then raise (Invalid_ROM "Header not zero-filled"))
-        @@ Array.sub rom 11 5
-    ; config
+    config
 
 let load_rom path =
     let rom = read_file path in
