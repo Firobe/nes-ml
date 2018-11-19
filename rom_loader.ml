@@ -71,6 +71,7 @@ let load_rom path =
     Printf.printf "PRG RAM : %B\n" config.prg_ram_present;
     Printf.printf "TV system : %s\n"
         (if config.tv_system then "PAL" else "NTSC");
+    Printf.printf "Mirroring type : %B\n" config.mirroring;
     let cur_address = ref 0x10 in
     let trainer = if not config.trainer then None else (
         cur_address := !cur_address + 0x200;

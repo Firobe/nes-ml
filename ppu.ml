@@ -120,10 +120,16 @@ let decode_chr start tile_nb x y =
 
 let get_address x y =
     let quad_nb = (y / 30) * 2 + (x / 32) in
-    let mirint = if !mirroring_mode then 1 else 0 in
+    let mirint = if !mirroring_mode then 0 else 1 in
     let correct_qd_nb = quad_nb land (1 lsl mirint) in
     let base = !base_nametable_address + 0x400 * correct_qd_nb in
-    base + (y mod 30) * 32 + (x mod 32)
+    let r = base + (y mod 30) * 32 + (x mod 32) in
+(*
+    if y >= 30 || r >= 0x2800 then
+    Printf.printf "%d %d quad %d cor_quad %d base %d -> 0x%X\n%!"
+        x y quad_nb correct_qd_nb base r
+*)
+    r
 
 let render_background_pixel x y =
     let x_tile = x / 8 in
