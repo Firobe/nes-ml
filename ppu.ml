@@ -125,32 +125,32 @@ let get_address x y =
     let y_mir = y_add mod (if !mirroring_mode then 30 else 60) in
     let quad_nb = (y_mir / 30) * 2 + (x_mir / 32) in
     let base = 0x2000 + 0x400 * quad_nb in
-    let r = base + (y mod 30) * 32 + (x mod 32) in
+    base, (x mod 32), (y mod 30)
 (*     let loul = r mod (0x2C00 - mirint * Ox800) *)
     (*
     if y >= 30 || r >= 0x2800 then
     Printf.printf "%d %d quad %d cor_quad %d base %d -> 0x%X\n%!"
         x y quad_nb correct_qd_nb base r
 *)
-    r
+(*     r *)
 
 let render_background_pixel x y =
     let x_tile = x / 8 in
     let y_tile = y / 8 in
-    let address = get_address x_tile y_tile in
+    let base_addr, x_mod, y_mod = get_address x_tile y_tile in
+    let address = base_addr + y_mod * 32 + x_mod in
     let tile_kind = memory.(address) in
     let color_nb = decode_chr !background_pattern_address tile_kind x y in
     match color_nb with
     | 0 -> None
     | _ ->
         (* Decode attribute table *)
-        let base_addr = !base_nametable * 0x400 + 0x2000 in
         let attr_table_address = base_addr + 0x3C0 in
-        let x_big = x_tile / 4 in
-        let y_big = y_tile / 4 in
+        let x_big = x_mod / 4 in
+        let y_big = y_mod / 4 in
         let big_addr = attr_table_address + y_big * 8 + x_big in
         let big_byte = memory.(big_addr) in
-        let block_offset = (((x / 16) mod 2) + 2 * ((y / 16) mod 2)) * 2 in
+        let block_offset = (((x_mod / 2) mod 2) + 2 * ((y_mod / 2) mod 2)) * 2 in
         let palette_nb = (big_byte lsr block_offset) land 0x3 in
         (* Get palette *)
         let address = 0x3F00 + palette_nb * 4 + color_nb in
