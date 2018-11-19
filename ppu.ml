@@ -47,7 +47,7 @@ let set_register addr v =
     let register = addr land 0x7 in
     match register with
     | 0 -> (* Control register *)
-        base_nametable_address := 0x2000 lor ((v land 0x3) lsl 10);
+        base_nametable_address := v land 0x3;
         ppudata_increment := if nth_bit v 2 then 32 else 1;
         sprite_pattern_address := if (nth_bit v 3) then 0x1000 else 0x0;
         background_pattern_address := if (nth_bit v 4) then 0x1000 else 0x0;
@@ -119,12 +119,16 @@ let decode_chr start tile_nb x y =
     low_bit lor (high_bit lsl 1)
 
 let get_address x y =
-    let quad_nb = (y / 30) * 2 + (x / 32) in
-    let mirint = if !mirroring_mode then 0 else 1 in
-    let correct_qd_nb = quad_nb land (1 lsl mirint) in
-    let base = !base_nametable_address + 0x400 * correct_qd_nb in
+    (* base_nametable : 0, 1, 2, 3 *)
+    let x_add = x + 32 * (!base_nametable_address land 1) in
+    let y_add = y + 30 * (!base_nametable_address lsr 1) in 
+    let x_mir = x_add mod (if !mirroring_mode then 64 else 32) in
+    let y_mir = y_add mod (if !mirroring_mode then 30 else 60) in
+    let quad_nb = (y_mir / 30) * 2 + (x_mir / 32) in
+    let base = 0x2000 + 0x400 * quad_nb in
     let r = base + (y mod 30) * 32 + (x mod 32) in
-(*
+(*     let loul = r mod (0x2C00 - mirint * Ox800) *)
+    (*
     if y >= 30 || r >= 0x2800 then
     Printf.printf "%d %d quad %d cor_quad %d base %d -> 0x%X\n%!"
         x y quad_nb correct_qd_nb base r
