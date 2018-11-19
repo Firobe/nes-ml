@@ -94,7 +94,7 @@ let get_register addr =
     | 7 -> (* PPU data *)
         let r = Array.get memory !ppu_address in
         ppu_address := !ppu_address + !ppudata_increment; r
-    | _ -> Printf.printf "Trying to read 0x800%d\n" register; assert false
+    | _ -> Printf.printf "Warning: trying to read 0x800%d\n%!" register; 0
 
 let dump_memory () =
     let file = open_out_bin "memdump_vram" in
@@ -140,7 +140,9 @@ let render_background_pixel x y =
 let render_background () =
     for y = 0 to 239 do
         for x = 0 to 255 do
-            Option.may (Display.set_pixel x y) (render_background_pixel x y)
+            let color = render_background_pixel
+                (x + !horizontal_scroll) (y + !vertical_scroll) in
+            Option.may (Display.set_pixel x y) color
         done
     done
 
