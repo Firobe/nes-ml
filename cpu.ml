@@ -43,6 +43,8 @@ class addr_wrapper addr = object(_)
     method get () =
         if is_in_ppu_range baddr then
             Ppu.get_register baddr
+        else if baddr = 0x4016 then
+            Input.next_register ()
         else memory.(baddr)
     method set v =
         if is_in_ppu_range baddr then

@@ -95,7 +95,7 @@ let get_register addr =
     | 7 -> (* PPU data *)
         let r = Array.get memory !ppu_address in
         ppu_address := !ppu_address + !ppudata_increment; r
-    | _ -> assert false
+    | _ -> Printf.printf "Trying to read 0x800%d\n" register; assert false
 
 let dump_memory () =
     let file = open_out_bin "memdump_vram" in
