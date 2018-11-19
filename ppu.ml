@@ -27,6 +27,8 @@ let emph_red = ref false
 let emph_green = ref false
 let emph_blue = ref false
 
+let mirroring_mode = ref false (* 0 : horizon (vert arr) *)
+
 let oam_address = ref 0x0
 let ppu_address = ref 0x0
 
@@ -118,7 +120,9 @@ let decode_chr start tile_nb x y =
 
 let get_address x y =
     let quad_nb = (y / 30) * 2 + (x / 32) in
-    let base = !base_nametable_address + 0x400 * quad_nb in
+    let mirint = if !mirroring_mode then 1 else 0 in
+    let correct_qd_nb = quad_nb land (1 lsl mirint) in
+    let base = !base_nametable_address + 0x400 * correct_qd_nb in
     base + (y mod 30) * 32 + (x mod 32)
 
 let render_background_pixel x y =
@@ -195,7 +199,8 @@ let render () =
     Display.display ();
     vblank_enabled := true
 
-let init () =
+let init mm =
+    mirroring_mode := mm;
     Display.init ()
 
 let exit () =
