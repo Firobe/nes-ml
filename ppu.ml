@@ -67,7 +67,7 @@ let set_register addr v =
         oam_address := v
     | 4 -> (* OAM data *)
         Array.set oam !oam_address v;
-        oam_address := !oam_address + 1
+        oam_address := (!oam_address + 1) mod 0x100
     | 5 -> (* Scroll register *)
         if read_latch () then
             horizontal_scroll := v
@@ -91,8 +91,7 @@ let get_register addr =
         let r = (int_of_bool !vblank_enabled) lsl 7 in
         vblank_enabled := false; r
     | 4 -> (* OAM data *)
-        let r = Array.get oam !oam_address in
-        oam_address := !oam_address + 1; r
+        Array.get oam !oam_address
     | 7 -> (* PPU data *)
         let r = Array.get memory !ppu_address in
         ppu_address := !ppu_address + !ppudata_increment; r
