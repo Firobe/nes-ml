@@ -3,6 +3,6 @@
 (executable
 	(
 		(name nes)
-		(libraries (tsdl extlib))
+		(libraries (tsdl extlib graphics))
 	)
 )

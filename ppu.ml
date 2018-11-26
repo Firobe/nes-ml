@@ -125,13 +125,6 @@ let get_address x y =
     let quad_nb = (y_mir / 30) * 2 + (x_mir / 32) in
     let base = 0x2000 + 0x400 * quad_nb in
     base, (x mod 32), (y mod 30)
-(*     let loul = r mod (0x2C00 - mirint * Ox800) *)
-    (*
-    if y >= 30 || r >= 0x2800 then
-    Printf.printf "%d %d quad %d cor_quad %d base %d -> 0x%X\n%!"
-        x y quad_nb correct_qd_nb base r
-*)
-(*     r *)
 
 let render_background_pixel x y =
     let x_tile = x / 8 in
@@ -208,6 +201,26 @@ let render () =
     Display.display ();
     vblank_enabled := true
 
+let debug_vram scale =
+    for x = 0 to 15 do
+        for y = 0 to 15 do
+            for x_loc = 0 to 7 do
+                for y_loc = 0 to 7 do
+                    let kind = decode_chr 0 (x * 16 + y) x_loc y_loc in
+                    Graphics.set_color (match kind with
+                        | 0 -> Graphics.red
+                        | 1 -> Graphics.green
+                        | 2 -> Graphics.blue
+                        | 3 -> Graphics.black
+                        | _ -> assert false
+                    );
+                    Graphics.fill_rect (scale * (x * 128 + x_loc))
+                        (scale * (y*8 + y_loc)) scale scale
+                done
+            done
+        done
+    done
+    
 let init mm =
     mirroring_mode := mm;
     Display.init ()
