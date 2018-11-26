@@ -214,7 +214,7 @@ let debug_vram scale =
                         | 3 -> Graphics.black
                         | _ -> assert false
                     );
-                    Graphics.fill_rect (scale * (x * 128 + x_loc))
+                    Graphics.fill_rect (scale * (x * 8 + x_loc))
                         (scale * (y*8 + y_loc)) scale scale
                 done
             done
