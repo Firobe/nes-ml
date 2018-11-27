@@ -19,7 +19,7 @@ let rec cpu_exec_n_cycles n =
         cpu_exec_n_cycles (n - elapsed)
     )
 
-let scale = 8
+let scale = 4
 
 let rec main_loop frame limit =
     Input.get_inputs ();
@@ -38,7 +38,8 @@ let start_main_loop = main_loop 0
 
 let main =
     Graphics.open_graph "";
-    Graphics.resize_window (128 * scale) (128 * scale);
+    Graphics.resize_window (256 * scale) (128 * scale);
+    Graphics.auto_synchronize false;
     if Array.length Sys.argv > 1 then (
         let rom = Rom_loader.load_rom Sys.argv.(1) in
         load_rom_memory rom;

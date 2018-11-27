@@ -76,11 +76,15 @@ let set_register addr v =
     | 6 -> (* PPU address *)
         if read_latch () then
             ppu_address := ((!ppu_address land 0xFF) lor (v lsl 8) land 0x3FFF)
-        else
-            ppu_address := (!ppu_address land 0xFF00) lor v
+        else (
+            ppu_address := (!ppu_address land 0xFF00) lor v;
+            Printf.printf "Setting addr to %X\n" !ppu_address
+        )
     | 7 -> (* PPU data *)
+        Printf.printf "Putting %X in %X\n" v !ppu_address;
         Array.set memory !ppu_address v;
-        ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
+        ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF;
+        Printf.printf "Addr is now %X\n" !ppu_address
     | _ -> Printf.printf "Warning: trying to set 0x800%d\n" register
 
 let get_register addr =
@@ -202,24 +206,24 @@ let render () =
     vblank_enabled := true
 
 let debug_vram scale =
-    for x = 0 to 15 do
+    for x = 0 to 31 do
         for y = 0 to 15 do
             for x_loc = 0 to 7 do
                 for y_loc = 0 to 7 do
                     let kind = decode_chr 0 (x * 16 + y) x_loc y_loc in
-                    Graphics.set_color (match kind with
-                        | 0 -> Graphics.red
-                        | 1 -> Graphics.green
-                        | 2 -> Graphics.blue
-                        | 3 -> Graphics.black
-                        | _ -> assert false
-                    );
+                    let gr = kind * 64 in
+                    Graphics.set_color (Graphics.rgb gr gr gr);
                     Graphics.fill_rect (scale * (x * 8 + x_loc))
-                        (scale * (y*8 + y_loc)) scale scale
+                        (scale * (y*8 + y_loc)) scale scale;
                 done
-            done
+            done;
+            let str = Printf.sprintf "%X" (16*(x * 16 + y)) in
+            Graphics.moveto (scale * (x * 8)) (scale * (y*8));
+            Graphics.set_color Graphics.red;
+            Graphics.draw_string str
         done
-    done
+    done;
+    Graphics.synchronize ()
     
 let init mm =
     mirroring_mode := mm;
