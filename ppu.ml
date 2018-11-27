@@ -76,15 +76,11 @@ let set_register addr v =
     | 6 -> (* PPU address *)
         if read_latch () then
             ppu_address := ((!ppu_address land 0xFF) lor (v lsl 8) land 0x3FFF)
-        else (
-            ppu_address := (!ppu_address land 0xFF00) lor v;
-            Printf.printf "Setting addr to %X\n" !ppu_address
-        )
+        else
+            ppu_address := (!ppu_address land 0xFF00) lor v
     | 7 -> (* PPU data *)
-        Printf.printf "Putting %X in %X\n" v !ppu_address;
         Array.set memory !ppu_address v;
-        ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF;
-        Printf.printf "Addr is now %X\n" !ppu_address
+        ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
     | _ -> Printf.printf "Warning: trying to set 0x800%d\n" register
 
 let vram_buffer = ref 0
