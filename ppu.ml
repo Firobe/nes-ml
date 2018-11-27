@@ -87,6 +87,7 @@ let set_register addr v =
         Printf.printf "Addr is now %X\n" !ppu_address
     | _ -> Printf.printf "Warning: trying to set 0x800%d\n" register
 
+let vram_buffer = ref 0
 let get_register addr =
     let register = addr land 0x7 in
     match register with
@@ -97,8 +98,10 @@ let get_register addr =
     | 4 -> (* OAM data *)
         Array.get oam !oam_address
     | 7 -> (* PPU data *)
-        let r = Array.get memory !ppu_address in
-        ppu_address := !ppu_address + !ppudata_increment; r
+        let r = !vram_buffer in
+        vram_buffer := Array.get memory !ppu_address;
+        ppu_address := !ppu_address + !ppudata_increment;
+        r
     | _ -> Printf.printf "Warning: trying to read 0x800%d\n" register; 0
 
 let dump_memory () =
