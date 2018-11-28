@@ -25,7 +25,6 @@ let rec main_loop frame limit =
     Input.get_inputs ();
     if frame != limit && (Input.continue ()) then (
         Ppu.render ();
-        Ppu.debug_vram scale;
         if !Ppu.nmi_enabled then (
             Cpu.interrupt ()
         ) ;
@@ -37,9 +36,6 @@ let start_main_loop = main_loop 0
 
 
 let main =
-    Graphics.open_graph "";
-    Graphics.resize_window (256 * scale) (128 * scale);
-    Graphics.auto_synchronize false;
     if Array.length Sys.argv > 1 then (
         let rom = Rom_loader.load_rom Sys.argv.(1) in
         load_rom_memory rom;
