@@ -94,8 +94,9 @@ let get_register addr =
     | 4 -> (* OAM data *)
         Array.get oam !oam_address
     | 7 -> (* PPU data *)
-        let r = !vram_buffer in
+        let oldb = !vram_buffer in
         vram_buffer := Array.get memory !ppu_address;
+        let r = if !ppu_address < 0x3F00 then oldb else !vram_buffer in
         ppu_address := !ppu_address + !ppudata_increment;
         r
     | _ -> Printf.printf "Warning: trying to read 0x800%d\n" register; 0
