@@ -11,11 +11,8 @@ module NesCpu = Cpu.Make (struct
     let write mem a v =
         if is_in_ppu_range a then
             Ppu.set_register a v
-        else if a = 0x4014 then (
-            let cpu_begin = v lsl 8 in
-            Array.blit mem cpu_begin Ppu.oam
-                !Ppu.oam_address 0x100
-        )
+        else if a = 0x4014 then
+            Ppu.dma mem (v lsl 8)
         else mem.(a) <- v
 end)
 

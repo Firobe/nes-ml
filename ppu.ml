@@ -101,6 +101,14 @@ let get_register addr =
         r
     | _ -> Printf.printf "Warning: trying to read 0x800%d\n" register; 0
 
+let dma mem cpu_begin =
+    let rec aux cpu_addr oam_addr length =
+        if length > 0 then (
+            oam.(oam_addr) <- mem.(cpu_addr);
+            aux (cpu_addr + 1) ((oam_addr + 1) mod 0x100) (length - 1)
+        )
+    in aux cpu_begin !oam_address 0x100
+
 let dump_memory () =
     let file = open_out_bin "memdump_vram" in
     let store = Bytes.create 0x10000 in
