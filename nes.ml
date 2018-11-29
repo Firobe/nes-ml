@@ -35,9 +35,6 @@ let rec main_loop frame limit =
     Input.get_inputs ();
     if frame != limit && (Input.continue ()) then (
         Ppu.render ();
-        if !Ppu.nmi_enabled then (
-            NesCpu.interrupt ()
-        ) ;
         cpu_exec_n_cycles 29780;
         main_loop (frame + 1) limit
     )
@@ -48,7 +45,7 @@ let main =
     if Array.length Sys.argv > 1 then (
         let rom = Rom_loader.load_rom Sys.argv.(1) in
         load_rom_memory rom;
-        Ppu.init rom.config.mirroring;
+        Ppu.init NesCpu.interrupt rom.config.mirroring;
         NesCpu.stack_pointer := 0xFD ;
         NesCpu.processor_status := 0x34 ;
         NesCpu.program_counter := (NesCpu.memory.(0xFFFD) lsl 8) lor NesCpu.memory.(0xFFFC) ;

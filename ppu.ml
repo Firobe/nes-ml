@@ -32,6 +32,8 @@ let mirroring_mode = ref false (* 0 : horizon (vert arr) *)
 let oam_address = ref 0x0
 let ppu_address = ref 0x0
 
+let interrupt_cpu = ref None
+
 (* Latch for PPUSCROLL and PPUADDR *)
 let latch = ref true (* True : first set *)
 let read_latch () =
@@ -211,7 +213,9 @@ let render () =
     if !show_sprites then
         render_sprites true 0;
     Display.display ();
-    vblank_enabled := true
+    vblank_enabled := true;
+    if !nmi_enabled then
+        Option.get !interrupt_cpu ()
 
 let debug_vram scale =
     Graphics.open_graph "";
@@ -234,7 +238,8 @@ let debug_vram scale =
         done
     done
     
-let init mm =
+let init ic mm =
+    interrupt_cpu := Some ic;
     mirroring_mode := mm;
     Display.init ()
 
