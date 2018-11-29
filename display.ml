@@ -3,7 +3,7 @@ open Bigarray
 
 let width = 256
 let height = 240
-let scale = 4
+let scale = 2
 
 let s_width = scale * width
 let s_height = scale * height

@@ -1,9 +1,7 @@
 open Rom_loader
 
 module SCpu = Cpu.Make (struct
-    let is_in_ppu_range addr = 
-        let prefix = addr lsr 13 in
-        prefix = 1
+    let is_in_ppu_range addr = (addr lsr 13) = 1
 
     let read mem a =
         let ba = a land 0xFFFF in
@@ -40,8 +38,6 @@ let rec cpu_exec_n_cycles n =
         cpu_exec_n_cycles (n - elapsed)
     )
 
-let scale = 4
-
 let rec main_loop frame limit =
     Input.get_inputs ();
     if frame != limit && (Input.continue ()) then (
@@ -54,7 +50,6 @@ let rec main_loop frame limit =
     )
 
 let start_main_loop = main_loop 0
-
 
 let main =
     if Array.length Sys.argv > 1 then (
