@@ -43,7 +43,8 @@ let display () =
 let init () =
     sdl_get @@ Sdl.init Sdl.Init.video ;
     let win = sdl_get @@ Sdl.create_window ~w:s_width ~h:s_height "NES" Sdl.Window.opengl in
-    let flags = Sdl.Renderer.(+) Sdl.Renderer.accelerated Sdl.Renderer.presentvsync in
+    let flags = Sdl.Renderer.(+) Sdl.Renderer.accelerated
+    Sdl.Renderer.accelerated in
     let r = sdl_get @@ Sdl.create_renderer ~flags win in
 (*     let pal = sdl_get @@ Sdl.alloc_palette (Array.length palette) in *)
     let text = sdl_get @@ Sdl.create_texture r Sdl.Pixel.format_rgb888
