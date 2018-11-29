@@ -1,6 +1,6 @@
 # NES-ml
 
-Dependencies : `tsdl`, `extlib`
+Dependencies : `tsdl`, `extlib`, [`6502-ml`](https://github.com/Firobe/6502-ml)
 
 ## Build
 

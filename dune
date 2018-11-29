@@ -1,0 +1,4 @@
+(executable
+	(name nes)
+	(libraries 6502-ml tsdl extlib graphics)
+)
