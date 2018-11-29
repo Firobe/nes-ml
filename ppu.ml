@@ -205,6 +205,8 @@ let render () =
     vblank_enabled := true
 
 let debug_vram scale =
+    Graphics.open_graph "";
+    Graphics.resize_window (256 * scale) (128 * scale);
     for x = 0 to 31 do
         for y = 0 to 15 do
             for x_loc = 0 to 7 do
@@ -221,8 +223,7 @@ let debug_vram scale =
             Graphics.set_color Graphics.red;
             Graphics.draw_string str
         done
-    done;
-    Graphics.synchronize ()
+    done
     
 let init mm =
     mirroring_mode := mm;
