@@ -45,6 +45,12 @@ let int_of_bool b = if b then 1 else 0
 let nth_bit b n =
     (b land (1 lsl n)) != 0
 
+let palette_mirror_filter addr =
+    if addr >= 0x3F00 then
+        let tmp = !ppu_address land 0x3F1F in
+        if tmp = 0x3F10 then 0x3F00 else tmp
+    else addr
+
 let set_register addr v =
     let register = addr land 0x7 in
     match register with
@@ -81,7 +87,9 @@ let set_register addr v =
         else
             ppu_address := (!ppu_address land 0xFF00) lor v
     | 7 -> (* PPU data *)
-        Array.set memory !ppu_address v;
+        (* Palette mirroring *)
+        let addr = palette_mirror_filter !ppu_address in
+        Array.set memory addr v;
         ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
     | _ -> Printf.printf "Warning: trying to set 0x800%d\n" register
 
@@ -97,8 +105,12 @@ let get_register addr =
         Array.get oam !oam_address
     | 7 -> (* PPU data *)
         let oldb = !vram_buffer in
-        vram_buffer := Array.get memory !ppu_address;
-        let r = if !ppu_address < 0x3F00 then oldb else !vram_buffer in
+        (* Palette mirroring *)
+        let addr = palette_mirror_filter !ppu_address in
+        (* Correct buffer *)
+        vram_buffer := Array.get memory (addr land 0x2F1F);
+        let r = if !ppu_address < 0x3F00 then oldb
+            else Array.get memory addr in
         ppu_address := !ppu_address + !ppudata_increment;
         r
     | _ -> Printf.printf "Warning: trying to read 0x800%d\n" register; 0
