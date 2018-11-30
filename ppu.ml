@@ -74,7 +74,7 @@ let set_register addr v =
     | 3 -> (* OAM address *)
         oam_address := v
     | 4 -> (* OAM data *)
-        Array.set oam !oam_address v;
+        oam.(!oam_address) <- v;
         oam_address := (!oam_address + 1) mod 0x100
     | 5 -> (* Scroll register *)
         if read_latch () then
@@ -89,7 +89,7 @@ let set_register addr v =
     | 7 -> (* PPU data *)
         (* Palette mirroring *)
         let addr = palette_mirror_filter !ppu_address in
-        Array.set memory addr v;
+        memory.(addr) <- v;
         ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
     | _ -> Printf.printf "Warning: trying to set 0x800%d\n" register
 
@@ -102,17 +102,19 @@ let get_register addr =
         let r = (int_of_bool !vblank_enabled) lsl 7 in
         vblank_enabled := false; r
     | 4 -> (* OAM data *)
-        Array.get oam !oam_address
+        oam.(!oam_address)
     | 7 -> (* PPU data *)
-        let oldb = !vram_buffer in
         (* Palette mirroring *)
         let addr = palette_mirror_filter !ppu_address in
-        (* Correct buffer *)
-        vram_buffer := Array.get memory (addr land 0x2F1F);
-        let r = if !ppu_address < 0x3F00 then oldb
-            else Array.get memory addr in
         ppu_address := !ppu_address + !ppudata_increment;
-        r
+        (* Correct buffer *)
+        if addr >= 0x3F00 then begin
+            vram_buffer := memory.(addr land 0x2F1F);
+            memory.(addr)
+        end else begin
+            let old = !vram_buffer in
+            vram_buffer := memory.(addr); old
+        end
     | _ -> Printf.printf "Warning: trying to read 0x800%d\n" register; 0
 
 let dma mem cpu_begin =
