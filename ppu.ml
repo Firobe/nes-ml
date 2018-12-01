@@ -91,7 +91,7 @@ let set_register addr v =
         let addr = palette_mirror_filter !ppu_address in
         memory.(addr) <- v;
         ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
-    | _ -> Printf.printf "Warning: trying to set 0x800%d\n" register
+    | _ -> Printf.printf "Warning: trying to set 0x200%d\n" register
 
 let vram_buffer = ref 0
 let get_register addr =
@@ -115,7 +115,7 @@ let get_register addr =
             let old = !vram_buffer in
             vram_buffer := memory.(addr); old
         end
-    | _ -> Printf.printf "Warning: trying to read 0x800%d\n" register; 0
+    | _ -> 0
 
 let dma mem cpu_begin =
     let rec aux cpu_addr oam_addr length =
