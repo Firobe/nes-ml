@@ -23,19 +23,20 @@ let load_rom_memory rom =
     Array.blit rom.prg_rom 0 NesCpu.memory begin_address (rom.config.prg_rom_size);
     Array.blit rom.chr_rom 0 Ppu.memory 0x0 (rom.config.chr_rom_size)
 
-let rec cpu_exec_n_cycles n = 
+let rec ppu_exec_n_cycles n =
     if n > 0 then (
-        let old = !NesCpu.cycle_count in
-        NesCpu.fetch_instr ();
-        let elapsed = !NesCpu.cycle_count - old in
-        cpu_exec_n_cycles (n - elapsed)
+        Ppu.next_cycle ();
+        ppu_exec_n_cycles (n - 1)
     )
 
 let rec main_loop frame limit =
     Input.get_inputs ();
     if frame != limit && (Input.continue ()) then (
-        Ppu.render ();
-        cpu_exec_n_cycles 29780;
+(*         NesCpu.print_state (); *)
+        let old = !NesCpu.cycle_count in
+        NesCpu.fetch_instr ();
+        let elapsed = !NesCpu.cycle_count - old in
+        ppu_exec_n_cycles (elapsed * 3);
         main_loop (frame + 1) limit
     )
 
