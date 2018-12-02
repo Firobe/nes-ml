@@ -28,6 +28,7 @@ let emph_green = ref false
 let emph_blue = ref false
 
 let mirroring_mode = ref false (* 0 : horizon (vert arr) *)
+let sprite_0_hit = ref false
 
 let oam_address = ref 0x0
 let ppu_address = ref 0x0
@@ -100,7 +101,9 @@ let get_register addr =
     match register with
     | 2 -> (* Status register *)
         latch := true;
-        let r = (int_of_bool !vblank_enabled) lsl 7 in
+        let r =
+            (int_of_bool !vblank_enabled) lsl 7 lor
+            (int_of_bool !sprite_0_hit) lsl 6 in
         vbl_read := true;
         vblank_enabled := false; r
     | 4 -> (* OAM data *)
@@ -183,15 +186,6 @@ module Rendering = struct
             let address = 0x3F00 + palette_nb * 4 + color_nb in
             Some memory.(address)
 
-    let render_background () =
-        for y = 0 to 239 do
-            for x = 0 to 255 do
-                let color = render_background_pixel
-                    (x + !horizontal_scroll) (y + !vertical_scroll) in
-                Option.may (Display.set_pixel x y) color
-            done
-        done
-
     let render_sprite nb =
         if !sprite_size then Printf.printf "Unsupported 8x16 sprites\n";
         let ypos = oam.(nb) in
@@ -224,23 +218,25 @@ module Rendering = struct
             render_sprites after_back (nb + 4)
        )
 
-    let render () =
-        Display.clear_screen memory.(0x3F00);
-        if !show_sprites then
-            render_sprites false 0;
-        if !show_background then
-            render_background ();
-        if !show_sprites then
-            render_sprites true 0;
-        Display.display ()
-
     let next_cycle () =
+        (* Process *)
+        if !scanline >= 0 && !scanline < 240 then ((* 0 - 239 *)
+            let ypos = oam.(0) in
+            let xpos = oam.(3) in
+            if !scanline >= ypos && !cycle - 1 >= xpos then
+                sprite_0_hit := true;
+            if !show_background && !cycle > 0 && !cycle < 257 then
+                (* Background *)
+                let color = render_background_pixel (!cycle - 1 +
+                    !horizontal_scroll) (!scanline + !vertical_scroll) in
+                Option.may (Display.set_pixel (!cycle - 1) !scanline) color
+        );
         if !scanline = 241 && !cycle = 1 then (
-            render ();
             if not !vbl_read then vblank_enabled := true;
             if !nmi_enabled && not !vbl_read then
                 Option.get !interrupt_cpu ()
         );
+        (* Next *)
         incr cycle;
         if !cycle = 341 then (
             cycle := 0;
@@ -248,7 +244,12 @@ module Rendering = struct
         );
         if !scanline = 262 then (
             scanline := 0;
+            sprite_0_hit := false;
             incr frame;
+            render_sprites true 0;
+            Display.display ();
+            Display.clear_screen memory.(0x3F00);
+            render_sprites false 0;
             if (!frame mod 2) = 1 && !show_background then cycle := 1;
             vblank_enabled := false
         );
