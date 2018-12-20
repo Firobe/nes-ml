@@ -61,7 +61,7 @@ let main =
         NesCpu.program_counter := (NesCpu.memory.(0xFFFD) lsl 8) lor NesCpu.memory.(0xFFFC) ;
         Apu.init ();
         start_main_loop (-1);
-        Ppu.exit ();
-        Apu.exit ()
+        Apu.exit ();
+        Ppu.exit ()
     )
     else Printf.printf "No ROM provided\n"
