@@ -1,5 +1,4 @@
 open Tsdl
-open Result
 
 let cycle = ref 0
 let device = ref None
