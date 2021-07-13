@@ -185,8 +185,13 @@ module Rendering = struct
       let address = 0x3F00 + palette_nb * 4 + color_nb in
       Some memory.(address)
 
+  let sprite_warned = ref false
+
   let render_sprite nb =
-    if !sprite_size then Printf.printf "Unsupported 8x16 sprites\n";
+    if !sprite_size && not !sprite_warned then (
+      Printf.printf "Unsupported 8x16 sprites\n";
+      sprite_warned := true
+    ) ;
     let ypos = oam.(nb) in
     let xpos = oam.(nb + 3) in
     let attributes = oam.(nb + 2) in

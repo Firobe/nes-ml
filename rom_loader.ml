@@ -98,7 +98,7 @@ module Preload (C : Cpu.Mmap) = struct
     else C.write a v
 end
 
-module MapperNROM (R : ROM) = Preload (struct
+module NROM (R : ROM) = Preload (struct
     let mem =
       let m = Array.make 0x10000 0x00 in
       let rom = R.get in
@@ -109,8 +109,38 @@ module MapperNROM (R : ROM) = Preload (struct
     let write a v = mem.(a) <- v
   end)
 
+module UxROM (R : ROM) = Preload (struct
+    let mem = Array.make 0x8000 0x00 (* main memory *)
+
+    let banks =
+      let rom = R.get in
+      let bank_nb = rom.config.prg_rom_size / 0x4000 in
+      let create_bank _ = Array.make 0x4000 0x00 in
+      let banks = Array.init bank_nb create_bank in
+      for i = 0 to bank_nb - 1 do
+        Array.blit rom.prg_rom (0x4000 * i) banks.(i) 0 0x4000
+      done ; banks
+
+    let last_bank = banks.(Array.length banks - 1)
+    let selected = ref 0
+
+    let read a =
+      if a >= 0xC000 then
+        last_bank.(a land 0x3FFF)
+      else if a >= 0x8000 then
+        banks.(!selected).(a land 0x3FFF)
+      else mem.(a)
+
+    let write a v =
+      if a >= 0x8000 then (
+        selected := v
+      )
+      else mem.(a) <- v
+  end)
+
 let mappers = [
-  (0, (module MapperNROM : MAPPER))
+  (0, (module NROM : MAPPER));
+  (2, (module UxROM))
 ]
 
 let load_rom path =

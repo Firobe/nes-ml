@@ -18,7 +18,7 @@ let rec n_times f n =
 
 let rec main_loop frame limit _sup_cycle cpu =
   Input.get_inputs ();
-  if frame != limit && (Input.continue ()) then (
+  if frame <> limit && (Input.continue ()) then (
     (*         NesCpu.print_state (); *)
     let module NesCpu = (val cpu : Cpu.Full) in
     let old = !NesCpu.cycle_count in
