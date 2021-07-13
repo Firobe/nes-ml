@@ -45,7 +45,7 @@ let rec n_times f n =
     f (); n_times f (n - 1)
   )
 
-let rec main_loop frame limit sup_cycle cpu =
+let rec main_loop frame limit _sup_cycle cpu =
   Input.get_inputs ();
   if frame != limit && (Input.continue ()) then (
     (*         NesCpu.print_state (); *)
@@ -53,7 +53,7 @@ let rec main_loop frame limit sup_cycle cpu =
     let old = !NesCpu.cycle_count in
     NesCpu.fetch_instr ();
     let elapsed = !NesCpu.cycle_count - old in
-    n_times Apu.next_cycle ((elapsed + sup_cycle) / 2);
+    (* n_times Apu.next_cycle ((elapsed + sup_cycle) / 2); *)
     n_times Ppu.next_cycle (elapsed * 3);
     main_loop (frame + 1) limit (elapsed mod 2) cpu
   )
@@ -66,13 +66,13 @@ let main =
     let module NesCpu = Cpu.Make (Mapper0 (struct let get = rom end)) in
     load_rom_memory rom;
     Ppu.init NesCpu.interrupt rom.config.mirroring;
-    NesCpu.stack_pointer := 0xFD ;
-    NesCpu.processor_status := 0x34 ;
-    NesCpu.program_counter := (NesCpu.M.read (0xFFFD) lsl 8) lor NesCpu.M.read (0xFFFC) ;
-    Apu.init ();
+    NesCpu.Register.set `S 0xFD ;
+    NesCpu.Register.set `P 0x34 ;
+    NesCpu.Register.set `PC @@ (NesCpu.M.read (0xFFFD) lsl 8) lor NesCpu.M.read (0xFFFC) ;
+    (* Apu.init (); *)
     let cpu = (module NesCpu : Cpu.Full) in
     start_main_loop (-1) cpu;
-    Apu.exit ();
+    (* Apu.exit (); *)
     Ppu.exit ()
   )
   else Printf.printf "No ROM provided\n"
