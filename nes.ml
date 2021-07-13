@@ -33,9 +33,9 @@ let start_main_loop lim = main_loop 0 lim 0
 
 let main =
   if Array.length Sys.argv > 1 then (
-    let rom, mapper = Rom_loader.load_rom Sys.argv.(1) in
+    let rom, pre_cpu = Rom_loader.load_rom Sys.argv.(1) in
     (* Create the CPU from the Mapper and ROM *)
-    let module NesCpu = Cpu.Make ((val mapper : MAPPER) (struct let get = rom end)) in
+    let module NesCpu = Cpu.Make ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
     Ppu.init NesCpu.interrupt rom.config.mirroring;
     NesCpu.Register.set `S 0xFD ;

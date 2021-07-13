@@ -68,10 +68,15 @@ let read_header rom  =
 (* Utils *)
 let is_in_ppu_range addr = addr >= 0x2000 && addr <= 0x2007
 let is_in_apu_range addr = addr >= 0x4000 && addr <= 0x4017 && addr <> 0x4014
+let is_in_cartridge_range addr = addr >= 0x8000
 
 module type MAPPER = functor (R : ROM) -> Cpu.Mmap
 
-module Preload (C : Cpu.Mmap) = struct
+module Make_CPU (M : MAPPER) (R : ROM) = struct
+  module C = M(R)
+
+  let mem = Array.make 0x8000 0x00 (* Main memory *)
+
   let address_mirroring a =
     if a < 0x2000 then (* RAM mirroring *)
       a land 0x07FF
@@ -85,7 +90,9 @@ module Preload (C : Cpu.Mmap) = struct
       Ppu.get_register (a land 0x7)
     else if a = 0x4016 then
       Input.next_register ()
-    else C.read a
+    else if is_in_cartridge_range a then
+      C.read a
+    else mem.(a)
 
   let write a v =
     let a = address_mirroring a in
@@ -95,48 +102,47 @@ module Preload (C : Cpu.Mmap) = struct
       Apu.write_register v a
     else if a = 0x4014 then
       Ppu.dma read (v lsl 8)
-    else C.write a v
+    else if is_in_cartridge_range a then
+      C.write a v
+    else mem.(a) <- v
 end
 
-module NROM (R : ROM) = Preload (struct
-    let mem =
-      let m = Array.make 0x10000 0x00 in
-      let rom = R.get in
-      let begin_address = 0x10000 - rom.config.prg_rom_size in
-      Array.blit rom.prg_rom 0 m begin_address (rom.config.prg_rom_size); m
+module NROM (R : ROM) = struct
+  let prg_rom =
+    let rom = R.get in
+    let bank_nb = rom.config.prg_rom_size / 0x4000 in
+    if bank_nb = 2 then rom.prg_rom
+    else
+      let m = Array.make 0x8000 0x00 in (* 32K *)
+      Array.blit rom.prg_rom 0 m 0 0x4000;
+      Array.blit rom.prg_rom 0 m 0x4000 0x4000;
+      m
 
-    let read a = mem.(a)
-    let write a v = mem.(a) <- v
-  end)
+  let read a = prg_rom.(a land 0x7FFF)
+  let write a v = prg_rom.(a land 0x7FFF) <- v
+end
 
-module UxROM (R : ROM) = Preload (struct
-    let mem = Array.make 0x8000 0x00 (* main memory *)
+module UxROM (R : ROM) = struct
+  let banks =
+    let rom = R.get in
+    let bank_nb = rom.config.prg_rom_size / 0x4000 in
+    let create_bank _ = Array.make 0x4000 0x00 in
+    let banks = Array.init bank_nb create_bank in
+    for i = 0 to bank_nb - 1 do
+      Array.blit rom.prg_rom (0x4000 * i) banks.(i) 0 0x4000
+    done ; banks
 
-    let banks =
-      let rom = R.get in
-      let bank_nb = rom.config.prg_rom_size / 0x4000 in
-      let create_bank _ = Array.make 0x4000 0x00 in
-      let banks = Array.init bank_nb create_bank in
-      for i = 0 to bank_nb - 1 do
-        Array.blit rom.prg_rom (0x4000 * i) banks.(i) 0 0x4000
-      done ; banks
+  let last_bank = banks.(Array.length banks - 1)
+  let selected = ref 0
 
-    let last_bank = banks.(Array.length banks - 1)
-    let selected = ref 0
+  let read a =
+    if a >= 0xC000 then
+      last_bank.(a land 0x3FFF)
+    else
+      banks.(!selected).(a land 0x3FFF)
 
-    let read a =
-      if a >= 0xC000 then
-        last_bank.(a land 0x3FFF)
-      else if a >= 0x8000 then
-        banks.(!selected).(a land 0x3FFF)
-      else mem.(a)
-
-    let write a v =
-      if a >= 0x8000 then (
-        selected := v
-      )
-      else mem.(a) <- v
-  end)
+  let write _ v = selected := v
+end
 
 let mappers = [
   (0, (module NROM : MAPPER));
@@ -147,9 +153,9 @@ let load_rom path =
   let rom = read_file path in
   let config = read_header rom in
   Printf.printf "Mapper %d\n" config.mapper_nb ;
-  let mapper = match List.assoc_opt config.mapper_nb mappers with
+  let prepared_cpu = match List.assoc_opt config.mapper_nb mappers with
     | None -> raise (Invalid_ROM "Unsupported mapper")
-    | Some x -> x
+    | Some x -> (module (Make_CPU((val x : MAPPER))) : MAPPER)
   in
   Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
   Printf.printf "CHR ROM is %d bytes\n" config.chr_rom_size;
@@ -172,4 +178,4 @@ let load_rom path =
     prg_rom = prg_rom;
     chr_rom = chr_rom;
     trainer = trainer;
-  }, mapper
+  }, prepared_cpu
