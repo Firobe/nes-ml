@@ -93,11 +93,10 @@ let set_register addr v =
         let addr = palette_mirror_filter !ppu_address in
         memory.(addr) <- v;
         ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
-    | _ -> Printf.printf "Warning: trying to set 0x200%d\n" register
+    | _ -> Printf.printf "Warning: trying to set PPU register %d\n" register
 
 let vram_buffer = ref 0
-let get_register addr =
-    let register = addr land 0x7 in
+let get_register register =
     match register with
     | 2 -> (* Status register *)
         latch := true;
@@ -122,10 +121,10 @@ let get_register addr =
         end
     | _ -> 0
 
-let dma mem cpu_begin =
+let dma read cpu_begin =
     let rec aux cpu_addr oam_addr length =
         if length > 0 then (
-            oam.(oam_addr) <- mem.(cpu_addr);
+            oam.(oam_addr) <- read cpu_addr;
             aux (cpu_addr + 1) ((oam_addr + 1) mod 0x100) (length - 1)
         )
     in aux cpu_begin !oam_address 0x100

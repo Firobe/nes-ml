@@ -1,34 +1,5 @@
 open Rom_loader
 
-module type ROM = sig
-  val get : rom
-end
-
-module Mapper0 (R : ROM) = struct
-  let is_in_ppu_range addr = (addr lsr 13) = 1
-  let is_in_apu_range addr = addr >= 0x4000 && addr <= 0x4017
-  let mem =
-    let m = Array.make 0x10000 0x00 in
-    let rom = R.get in
-    let begin_address = 0x10000 - rom.config.prg_rom_size in
-    Array.blit rom.prg_rom 0 m begin_address (rom.config.prg_rom_size); m
-
-  let read a =
-    if is_in_ppu_range a then
-      Ppu.get_register a
-    else if a = 0x4016 then
-      Input.next_register ()
-    else mem.(a)
-  let write a v =
-    if is_in_ppu_range a then
-      Ppu.set_register a v
-    else if a = 0x4014 then
-      Ppu.dma mem (v lsl 8)
-    else if is_in_apu_range a then
-      Apu.write_register v a
-    else mem.(a) <- v
-end
-
 exception Crash
 
 let load_rom_memory rom =
@@ -62,8 +33,9 @@ let start_main_loop lim = main_loop 0 lim 0
 
 let main =
   if Array.length Sys.argv > 1 then (
-    let rom = Rom_loader.load_rom Sys.argv.(1) in
-    let module NesCpu = Cpu.Make (Mapper0 (struct let get = rom end)) in
+    let rom, mapper = Rom_loader.load_rom Sys.argv.(1) in
+    (* Create the CPU from the Mapper and ROM *)
+    let module NesCpu = Cpu.Make ((val mapper : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
     Ppu.init NesCpu.interrupt rom.config.mirroring;
     NesCpu.Register.set `S 0xFD ;
