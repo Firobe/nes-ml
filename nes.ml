@@ -1,11 +1,5 @@
 open Rom_loader
-open Stdint
-let u8 = Uint8.of_int
-let u16 = Uint16.of_int
-let pp_u8 fmt u =
-  Format.fprintf fmt "%.2X" (Uint8.to_int u)
-let pp_u16 fmt u =
-  Format.fprintf fmt "%.4X" (Uint16.to_int u)
+open Cpu.Int_utils
 
 exception Crash
 

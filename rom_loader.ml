@@ -1,6 +1,5 @@
 open Stdint
-let u8 = Uint8.of_int
-let u16 = Uint16.of_int
+open Cpu.Int_utils
 exception Invalid_ROM of string
 
 type rom_config = {
