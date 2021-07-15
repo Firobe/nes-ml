@@ -1,4 +1,11 @@
 open Rom_loader
+open Stdint
+let u8 = Uint8.of_int
+let u16 = Uint16.of_int
+let pp_u8 fmt u =
+  Format.fprintf fmt "%.2X" (Uint8.to_int u)
+let pp_u16 fmt u =
+  Format.fprintf fmt "%.4X" (Uint16.to_int u)
 
 exception Crash
 
@@ -38,12 +45,18 @@ let main =
     let module NesCpu = Cpu.Make ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
     Ppu.init NesCpu.interrupt rom.config.mirroring;
-    NesCpu.Register.set `S 0xFD ;
-    NesCpu.Register.set `P 0x34 ;
-    NesCpu.Register.set `PC @@ (NesCpu.M.read (0xFFFD) lsl 8) lor NesCpu.M.read (0xFFFC) ;
+    NesCpu.Register.set `S (u8 0xFD) ;
+    NesCpu.Register.set `P (u8 0x34) ;
+    NesCpu.PC.init () ;
     (* Apu.init (); *)
     let cpu = (module NesCpu : Cpu.Full) in
-    start_main_loop (-1) cpu;
+    begin try
+        start_main_loop (-1) cpu;
+      with Cpu.Invalid_instruction (addr, opcode) ->
+        Format.printf
+          "The CPU encountered an invalid instruction %a at address %a.\n"
+          pp_u8 opcode pp_u16 addr
+    end ;
     (* Apu.exit (); *)
     Ppu.exit ()
   )
