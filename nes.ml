@@ -28,7 +28,7 @@ let main_loop cpu limit =
   let rec aux frame limit _sup_cycle =
     Input.get_inputs ();
     if frame <> limit && (Input.continue ()) then (
-      NesCpu.print_state ();
+      (* NesCpu.print_state (); *)
       let old = !NesCpu.cycle_count in
       NesCpu.fetch_instr ();
       let elapsed = !NesCpu.cycle_count - old in
