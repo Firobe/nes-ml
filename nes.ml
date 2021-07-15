@@ -23,20 +23,20 @@ let rec n_times f n =
     f (); n_times f (n - 1)
   )
 
-let rec main_loop frame limit _sup_cycle cpu =
-  Input.get_inputs ();
-  if frame <> limit && (Input.continue ()) then (
-    (*         NesCpu.print_state (); *)
-    let module NesCpu = (val cpu : Cpu.Full) in
-    let old = !NesCpu.cycle_count in
-    NesCpu.fetch_instr ();
-    let elapsed = !NesCpu.cycle_count - old in
-    (* n_times Apu.next_cycle ((elapsed + sup_cycle) / 2); *)
-    n_times Ppu.next_cycle (elapsed * 3);
-    main_loop (frame + 1) limit (elapsed mod 2) cpu
-  )
-
-let start_main_loop lim = main_loop 0 lim 0
+let main_loop cpu limit =
+  let module NesCpu = (val cpu : Cpu.Full) in
+  let rec aux frame limit _sup_cycle =
+    Input.get_inputs ();
+    if frame <> limit && (Input.continue ()) then (
+      NesCpu.print_state ();
+      let old = !NesCpu.cycle_count in
+      NesCpu.fetch_instr ();
+      let elapsed = !NesCpu.cycle_count - old in
+      (* n_times Apu.next_cycle ((elapsed + sup_cycle) / 2); *)
+      n_times Ppu.next_cycle (elapsed * 3);
+      aux (frame + 1) limit (elapsed mod 2)
+    )
+  in aux 0 limit 0
 
 let main =
   if Array.length Sys.argv > 1 then (
@@ -51,7 +51,7 @@ let main =
     (* Apu.init (); *)
     let cpu = (module NesCpu : Cpu.Full) in
     begin try
-        start_main_loop (-1) cpu;
+        main_loop cpu (-1) ;
       with Cpu.Invalid_instruction (addr, opcode) ->
         Format.printf
           "The CPU encountered an invalid instruction %a at address %a.\n"
