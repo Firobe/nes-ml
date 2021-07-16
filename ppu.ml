@@ -46,6 +46,8 @@ let read_latch () =
   latch := not !latch;
   r
 
+let bus_latch = ref (u8 0x00)
+
 let int_of_bool b = if b then 1 else 0
 let nth_bit b n =
   Uint8.((logand b (shift_left one n)) <> zero)
@@ -57,6 +59,7 @@ let palette_mirror_filter addr =
   else addr
 
 let set_register register (v : uint8) =
+  bus_latch := v ;
   match register with
   | 0 -> (* Control register *)
     base_nametable := Uint8.logand v (u8 0x3);
@@ -90,9 +93,6 @@ let set_register register (v : uint8) =
     if read_latch () then
       ppu_address := Uint16.logand
           (mk_addr ~lo:(get_lo !ppu_address) ~hi:v) (u16 0x3FFF)
-          (*
-      ppu_address := ((!ppu_address land 0xFF) lor (v lsl 8) land 0x3FFF)
-             *)
     else
       ppu_address := mk_addr ~hi:(get_hi !ppu_address) ~lo:v | 7 -> (* PPU data *)
     (* Palette mirroring *)
@@ -102,7 +102,8 @@ let set_register register (v : uint8) =
   | _ -> Printf.printf "Warning: trying to set PPU register %d\n" register
 
 let vram_buffer = ref (u8 0)
-let get_register = function
+let get_register reg =
+  let res = match reg with
   | 2 -> (* Status register *)
     latch := true;
     let r =
@@ -124,7 +125,8 @@ let get_register = function
       let old = !vram_buffer in
       vram_buffer := memory.(Uint16.to_int addr); old
     end
-  | _ -> (u8 0)
+  | _ -> !bus_latch
+  in bus_latch := res ; res
 
 let dma read cpu_begin =
   let rec aux cpu_addr oam_addr length =
@@ -173,6 +175,12 @@ module Rendering = struct
     let base = (u16 0x2000) + (u16 0x400) * quad_nb in
     base, (rem x (u16 32)), (rem y (u16 30))
 
+  (* Get a palette address, a palette number and a color number, give the
+   * corresponding color *)
+  let palette_ind_to_color start nb ind =
+    let address = Uint16.(start + (u16of8 nb) * (u16 4) + (u16of8 ind)) in
+    memory.(Uint16.to_int address)
+
   let render_background_pixel (x : uint16) (y : uint16) =
     let x_tile = Uint16.shift_right_logical x 3 in
     let y_tile = Uint16.shift_right_logical y 3 in
@@ -191,15 +199,20 @@ module Rendering = struct
       let big_byte = memory.(Uint16.to_int @@ big_addr) in
       let block_offset =
         ((((Uint16.to_int x_mod) / 2) mod 2) + 2 * (((Uint16.to_int y_mod) / 2) mod 2)) * 2 in
-      let palette_nb = u16of8 @@
+      let palette_nb = 
         Uint8.(logand (shift_right_logical big_byte block_offset) (u8 0x3)) in
       (* Get palette *)
-      let address = Uint16.((u16 0x3F00) + palette_nb * (u16 4) + (u16of8 color_nb)) in
-      Some memory.(Uint16.to_int address)
+      Some (palette_ind_to_color (u16 0x3F00) palette_nb color_nb)
 
   let sprite_warned = ref false
 
-  let render_sprite nb =
+  let draw_pixel x y pal_start palette_nb color_nb =
+    if color_nb <> (u8 0) then
+      let color = palette_ind_to_color pal_start palette_nb color_nb in
+      Display.set_pixel (Uint8.to_int x) (Uint8.to_int y) color
+
+
+  let render_sprite nb f =
     if !sprite_size && not !sprite_warned then (
       Printf.printf "Unsupported 8x16 sprites\n";
       sprite_warned := true
@@ -211,7 +224,6 @@ module Rendering = struct
     let palette = Uint8.logand attributes (u8 0x3) in
     let flip_h = nth_bit attributes 6 in
     let flip_v = nth_bit attributes 7 in
-    let palette_addr = Uint16.((u16 0x3F10) + (u16of8 palette) * (u16 4)) in
     for y = 0 to 7 do
       if Uint8.(ypos + (u8 y)) < (u8 240) then
         for x = 0 to 7 do
@@ -221,27 +233,45 @@ module Rendering = struct
           let fy = if flip_v then 7 - y else y in
           let color_nb = decode_chr !sprite_pattern_address
               tile_nb (u8 fx) (u8 fy) in
-          if color_nb <> (u8 0)  then
-            let color =  Uint16.(memory.(to_int @@ palette_addr + u16of8 color_nb)) in
-            Display.set_pixel (Uint8.to_int x') (Uint8.to_int y') color
+          f x' y' (u16 0x3F10) palette color_nb
         done
     done
 
   let rec render_sprites after_back nb =
     if nb != 256 then (
       if (Uint8.logand oam.(nb + 2) (u8 0x20) <> (u8 0)) <> after_back then
-        render_sprite nb
+        render_sprite nb draw_pixel
       ;
       render_sprites after_back (nb + 4)
     )
+
+  let get_sprite_zero_pixels () =
+    let pixels = ref [] in
+    let fill x y _ _ color =
+      if color <> (u8 0) then pixels := (x, y) :: !pixels
+    in
+    (* TODO sprite 0 should be dependent on OAM addr *)
+    render_sprite 0 fill ; !pixels
+
+  let sprite_zero_check x y bg_color =
+    match bg_color with
+    | None -> ()
+    | Some _ ->
+      if !show_background && !show_sprites then
+        (* compute these only once per frame *)
+        let pixels = get_sprite_zero_pixels () in
+        begin match List.find_opt ((=) (x, y)) pixels with
+          | None -> ()
+          | Some _ -> sprite_0_hit := !sprite_0_hit || true
+        end
 
   let next_cycle () =
     (* Process *)
     (* TODO : a lot of reading https://wiki.nesdev.com/w/index.php/PPU_scrolling *)
     if !scanline >= 0 && !scanline < 240 then ((* 0 - 239 *)
+      let cycle' = !cycle - 1 in
       let ypos = oam.(0) in
       let xpos = oam.(3) in
-      let cycle' = !cycle - 1 in
       if (u8 !scanline) >= ypos && (u8 cycle') >= xpos then
         sprite_0_hit := true;
       if !show_background && !cycle > 0 && !cycle <= 256 then
@@ -249,6 +279,7 @@ module Rendering = struct
         let color = render_background_pixel
             Uint16.((u16 cycle') + (u16of8 !horizontal_scroll))
             Uint16.((u16 !scanline) + (u16of8 !vertical_scroll)) in
+        ignore sprite_zero_check ;
         Option.may (Display.set_pixel cycle' !scanline) color
     );
     if !scanline = 241 && !cycle = 1 then (
