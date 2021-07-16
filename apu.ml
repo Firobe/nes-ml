@@ -18,7 +18,11 @@ let timer_step = ref 0
 let duty_type = ref 0
 let duty_step = ref 0
 
-let write_register v = function
+let write_register v r =
+  let open Stdint in
+  let v = Uint8.to_int v in
+  let r = Uint16.to_int r in
+  match r with
   | 4000 ->
     duty_type := (v lsr 6)
   | 4001 -> ()

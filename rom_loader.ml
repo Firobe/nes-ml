@@ -68,67 +68,64 @@ let read_header rom  =
 (* ################################ *)
 
 (* Utils *)
-let is_in_ppu_range addr = addr >= 0x2000 && addr <= 0x2007
-let is_in_apu_range addr = addr >= 0x4000 && addr <= 0x4017 && addr <> 0x4014
-let is_in_cartridge_range addr = addr >= 0x8000
+let is_in_ppu_range addr = addr >= (u16 0x2000) && addr <= (u16 0x2007)
+let is_in_apu_range addr = addr >= (u16 0x4000) && addr <= (u16 0x4017)
+                           && addr <> (u16 0x4014)
+let is_in_cartridge_range addr = addr >= (u16 0x8000)
 
-module type IMAPPER = functor (R : ROM) -> sig
-  val read_i : int -> int
-  val write_i : int -> int -> unit
-end
 module type MAPPER = functor (R : ROM) -> Cpu.Mmap
 
-module Make_CPU (M : IMAPPER) (R : ROM) = struct
+module Make_CPU (M : MAPPER) (R : ROM) = struct
   module C = M(R)
 
-  let mem = Array.make 0x8000 0x00 (* Main memory *)
+  let mem = Array.make 0x8000 (u8 0x00) (* Main memory *)
 
   let address_mirroring a =
-    if a < 0x2000 then (* RAM mirroring *)
-      a land 0x07FF
-    else if (a lsr 13) = 1 then (* PPU mirroring *)
-      a land 0x2007
+    let open Uint16 in
+    if a < (u16 0x2000) then (* RAM mirroring *)
+      logand a (u16 0x07FF)
+    else if (shift_right_logical a 13) = (u16 1) then (* PPU mirroring *) (* TODO also mask ?*)
+      logand a (u16 0x2007)
     else a
 
-  let read_i a =
+  let read (a : uint16) : uint8 =
+    let open Uint16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
-      Ppu.get_register (a land 0x7)
-    else if a = 0x4016 then
+      Ppu.get_register (to_int (logand a (u16 0x7)))
+    else if a = (u16 0x4016) then
       Input.next_register ()
     else if is_in_cartridge_range a then
-      C.read_i a
-    else mem.(a)
+      C.read a
+    else mem.(Uint16.to_int a)
 
-  let write_i a v =
+  let write (a : uint16) (v : uint8) =
+    let open Uint16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
-      Ppu.set_register (a land 0x7) v
+      Ppu.set_register (to_int (logand a (u16 0x7))) v
     else if is_in_apu_range a then
       Apu.write_register v a
-    else if a = 0x4014 then
-      Ppu.dma read_i (v lsl 8)
+    else if a = (u16 0x4014) then
+      Ppu.dma read Uint16.(shift_left (of_uint8 v) 8)
     else if is_in_cartridge_range a then
-      C.write_i a v
-    else mem.(a) <- v
-
-  let read a = (u8 (read_i (Uint16.to_int a)))
-  let write a v = write_i (Uint16.to_int a) (Uint8.to_int v)
+      C.write a v
+    else mem.(Uint16.to_int a) <- v
 end
 
 module NROM (R : ROM) = struct
   let prg_rom =
     let rom = R.get in
     let bank_nb = rom.config.prg_rom_size / 0x4000 in
-    if bank_nb = 2 then rom.prg_rom
+    if bank_nb = 2 then Array.map u8 rom.prg_rom
     else
       let m = Array.make 0x8000 0x00 in (* 32K *)
       Array.blit rom.prg_rom 0 m 0 0x4000;
       Array.blit rom.prg_rom 0 m 0x4000 0x4000;
-      m
+      Array.map u8 m
 
-  let read_i a = prg_rom.(a land 0x7FFF)
-  let write_i a v = prg_rom.(a land 0x7FFF) <- v
+  let read a = prg_rom.(Uint16.(to_int @@ logand a (u16 0x7FFF)))
+  let write a v = prg_rom.(Uint16.(to_int @@ logand a (u16 0x7FFF))) <- v
 end
 
 module UxROM (R : ROM) = struct
@@ -139,22 +136,22 @@ module UxROM (R : ROM) = struct
     let banks = Array.init bank_nb create_bank in
     for i = 0 to bank_nb - 1 do
       Array.blit rom.prg_rom (0x4000 * i) banks.(i) 0 0x4000
-    done ; banks
+    done ; Array.map (Array.map u8) banks
 
   let last_bank = banks.(Array.length banks - 1)
   let selected = ref 0
 
-  let read_i a =
-    if a >= 0xC000 then
-      last_bank.(a land 0x3FFF)
+  let read a =
+    if a >= (u16 0xC000) then
+      last_bank.(Uint16.(to_int @@ logand a (u16 0x3FFF)))
     else
-      banks.(!selected).(a land 0x3FFF)
+      banks.(!selected).(Uint16.(to_int @@ logand a (u16 0x3FFF)))
 
-  let write_i _ v = selected := v
+  let write _ v = selected := Uint8.to_int v
 end
 
 let mappers = [
-  (0, (module NROM : IMAPPER));
+  (0, (module NROM : MAPPER));
   (2, (module UxROM))
 ]
 
@@ -164,7 +161,7 @@ let load_rom path =
   Printf.printf "Mapper %d\n" config.mapper_nb ;
   let prepared_cpu = match List.assoc_opt config.mapper_nb mappers with
     | None -> raise (Invalid_ROM "Unsupported mapper")
-    | Some x -> (module (Make_CPU((val x : IMAPPER))) : MAPPER)
+    | Some x -> (module (Make_CPU((val x : MAPPER))) : MAPPER)
   in
   Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
   Printf.printf "CHR ROM is %d bytes\n" config.chr_rom_size;

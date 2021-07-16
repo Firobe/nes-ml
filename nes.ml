@@ -4,7 +4,7 @@ open Cpu.Int_utils
 exception Crash
 
 let load_rom_memory rom =
-  Array.blit rom.chr_rom 0 Ppu.memory 0x0 (rom.config.chr_rom_size)
+  Array.blit (Array.map u8 rom.chr_rom) 0 Ppu.memory 0x0 (rom.config.chr_rom_size)
 
 let rec ppu_exec_n_cycles n =
   if n > 0 then (
@@ -42,6 +42,7 @@ let main =
     NesCpu.Register.set `S (u8 0xFD) ;
     NesCpu.Register.set `P (u8 0x34) ;
     NesCpu.PC.init () ;
+    NesCpu.enable_decimal := false ;
     (* Apu.init (); *)
     let cpu = (module NesCpu : Cpu.Full) in
     begin try

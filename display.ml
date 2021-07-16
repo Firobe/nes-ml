@@ -1,5 +1,6 @@
 open Tsdl
 open Bigarray
+open Stdint
 
 let width = 256
 let height = 240
@@ -24,8 +25,8 @@ let texture = Global.empty "texture"
 
 let screen = Array1.create Int32 c_layout (width * height)
 
-let set_pixel x y v =
-    let color = palette.(v) in
+let set_pixel x y (v : uint8) =
+    let color = palette.(Uint8.to_int v) in
     screen.{y * width + x} <- color
 
 let sdl_get = function
@@ -34,7 +35,7 @@ let sdl_get = function
     | Ok obj -> obj
 
 let clear_screen back_color =
-    let rgb_color = palette.(back_color) in
+    let rgb_color = palette.(Uint8.to_int back_color) in
     Array1.fill screen rgb_color
 
 let display () =

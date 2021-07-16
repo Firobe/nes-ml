@@ -1,18 +1,21 @@
-let memory = Array.make 0x4000 0x0
-let oam = Array.make 0x100 0x0
+open Stdint
+open Cpu.Int_utils
+
+let memory = Array.make 0x4000 (u8 0)
+let oam = Array.make 0x100 (u8 0)
 
 (* Status *)
 let vblank_enabled = ref true
 
 (* Scrolling *)
-let horizontal_scroll = ref 0
-let vertical_scroll = ref 0
+let horizontal_scroll = ref (u8 0)
+let vertical_scroll = ref (u8 0)
 
 (* Control register *)
-let base_nametable = ref 0x2000
-let ppudata_increment = ref 0x1
-let sprite_pattern_address = ref 0x0
-let background_pattern_address = ref 0x0
+let base_nametable = ref (u8 0x0)
+let ppudata_increment = ref (u16 0x1)
+let sprite_pattern_address = ref (u16 0x0000)
+let background_pattern_address = ref (u16 0x0000)
 let sprite_size = ref false
 let master_slave_mode = ref false
 let nmi_enabled = ref false
@@ -30,8 +33,8 @@ let emph_blue = ref false
 let mirroring_mode = ref false (* 0 : horizon (vert arr) *)
 let sprite_0_hit = ref false
 
-let oam_address = ref 0x0
-let ppu_address = ref 0x0
+let oam_address = ref (u8 0x0)
+let ppu_address = ref (u16 0x0)
 
 let interrupt_cpu = ref None
 let vbl_read = ref false
@@ -45,22 +48,22 @@ let read_latch () =
 
 let int_of_bool b = if b then 1 else 0
 let nth_bit b n =
-  (b land (1 lsl n)) != 0
+  Uint8.((logand b (shift_left one n)) <> zero)
 
 let palette_mirror_filter addr =
-  if addr >= 0x3F00 then
-    let tmp = !ppu_address land 0x3F1F in
-    if tmp = 0x3F10 then 0x3F00 else tmp
+  if addr >= (u16 0x3F00) then
+    let tmp = Uint16.logand !ppu_address (u16 0x3F1F) in
+    if tmp = (u16 0x3F10) then (u16 0x3F00) else tmp
   else addr
 
-let set_register addr v =
-  let register = addr land 0x7 in
+let set_register register (v : uint8) =
   match register with
   | 0 -> (* Control register *)
-    base_nametable := v land 0x3;
-    ppudata_increment := if nth_bit v 2 then 32 else 1;
-    sprite_pattern_address := if (nth_bit v 3) then 0x1000 else 0x0;
-    background_pattern_address := if (nth_bit v 4) then 0x1000 else 0x0;
+    base_nametable := Uint8.logand v (u8 0x3);
+    (* TODO going accross, going down ? *)
+    ppudata_increment := if nth_bit v 2 then (u16 32) else (u16 1);
+    sprite_pattern_address := if (nth_bit v 3) then (u16 0x1000) else (u16 0x0);
+    background_pattern_address := if (nth_bit v 4) then (u16 0x1000) else (u16 0x0);
     sprite_size := nth_bit v 5;
     master_slave_mode := nth_bit v 6;
     nmi_enabled := nth_bit v 7
@@ -76,8 +79,8 @@ let set_register addr v =
   | 3 -> (* OAM address *)
     oam_address := v
   | 4 -> (* OAM data *)
-    oam.(!oam_address) <- v;
-    oam_address := (!oam_address + 1) mod 0x100
+    oam.(Uint8.to_int !oam_address) <- v;
+    oam_address := Uint8.(succ !oam_address)
   | 5 -> (* Scroll register *)
     if read_latch () then
       horizontal_scroll := v
@@ -85,50 +88,53 @@ let set_register addr v =
       vertical_scroll := v
   | 6 -> (* PPU address *)
     if read_latch () then
+      ppu_address := Uint16.logand
+          (mk_addr ~lo:(get_lo !ppu_address) ~hi:v) (u16 0x3FFF)
+          (*
       ppu_address := ((!ppu_address land 0xFF) lor (v lsl 8) land 0x3FFF)
+             *)
     else
-      ppu_address := (!ppu_address land 0xFF00) lor v
-  | 7 -> (* PPU data *)
+      ppu_address := mk_addr ~hi:(get_hi !ppu_address) ~lo:v | 7 -> (* PPU data *)
     (* Palette mirroring *)
     let addr = palette_mirror_filter !ppu_address in
-    memory.(addr) <- v;
-    ppu_address := (!ppu_address + !ppudata_increment) land 0x3FFF
+    memory.(Uint16.to_int addr) <- v;
+    ppu_address := Uint16.logand (u16 0x3FFF) Uint16.(!ppu_address + !ppudata_increment)
   | _ -> Printf.printf "Warning: trying to set PPU register %d\n" register
 
-let vram_buffer = ref 0
-let get_register register =
-  match register with
+let vram_buffer = ref (u8 0)
+let get_register = function
   | 2 -> (* Status register *)
     latch := true;
     let r =
       (int_of_bool !vblank_enabled) lsl 7 lor
       (int_of_bool !sprite_0_hit) lsl 6 in
     vbl_read := true;
-    vblank_enabled := false; r
+    vblank_enabled := false; (u8 r)
   | 4 -> (* OAM data *)
-    oam.(!oam_address)
+    oam.(Uint8.to_int !oam_address)
   | 7 -> (* PPU data *)
     (* Palette mirroring *)
     let addr = palette_mirror_filter !ppu_address in
-    ppu_address := !ppu_address + !ppudata_increment;
+    ppu_address := Uint16.(!ppu_address + !ppudata_increment);
     (* Correct buffer *)
-    if addr >= 0x3F00 then begin
-      vram_buffer := memory.(addr land 0x2F1F);
-      memory.(addr)
+    if addr >= (u16 0x3F00) then begin
+      vram_buffer := Uint16.(memory.(to_int @@ logand addr (u16 0x2F1F)));
+      memory.(Uint16.to_int addr)
     end else begin
       let old = !vram_buffer in
-      vram_buffer := memory.(addr); old
+      vram_buffer := memory.(Uint16.to_int addr); old
     end
-  | _ -> 0
+  | _ -> (u8 0)
 
 let dma read cpu_begin =
   let rec aux cpu_addr oam_addr length =
     if length > 0 then (
-      oam.(oam_addr) <- read cpu_addr;
-      aux (cpu_addr + 1) ((oam_addr + 1) mod 0x100) (length - 1)
+      oam.(Uint8.to_int oam_addr) <- read cpu_addr;
+      aux (Uint16.succ cpu_addr) (Uint8.succ oam_addr) (length - 1)
     )
   in aux cpu_begin !oam_address 0x100
 
+(*
 let dump_memory () =
   let file = open_out_bin "memdump_vram" in
   let store = Bytes.create 0x10000 in
@@ -136,54 +142,60 @@ let dump_memory () =
     Bytes.set store i @@ char_of_int memory.(i)
   done ;
   output file store 0 (Bytes.length store) ;
-  close_out file
+   close_out file
+   *)
 
 module Rendering = struct
   let frame = ref 0
   let scanline = ref 261
   let cycle = ref 0
 
-  let decode_chr start tile_nb x y =
-    let chr_base = start + tile_nb * 0x10 in
-    let x_mod = x mod 8 in
-    let y_mod = y mod 8 in
-    let low_byte = memory.(chr_base + y_mod) in
-    let high_byte = memory.(chr_base + 0x8 + y_mod) in
-    let mask = 1 lsl (7 - x_mod) in
-    let low_bit = int_of_bool (low_byte land mask != 0) in
-    let high_bit = int_of_bool (high_byte land mask != 0) in
-    low_bit lor (high_bit lsl 1)
+  let decode_chr (start : uint16) (tile_nb : uint8) (x : uint8) (y : uint8) =
+    let chr_base = Uint16.(start + (u16of8 tile_nb) * (u16 0x10)) in
+    let x_mod = u16of8 @@ Uint8.logand x (u8 0x7) in
+    let y_mod = u16of8 @@ Uint8.logand y (u8 0x7) in
+    let low_byte = memory.(Uint16.(to_int @@ chr_base + y_mod)) in
+    let high_byte = memory.(Uint16.(to_int @@ chr_base + (u16 0x8) + y_mod)) in
+    let mask = Uint8.shift_left (u8 1) (7 - (Uint16.to_int x_mod)) in
+    let low_bit = int_of_bool Uint8.(logand low_byte mask != zero) in
+    let high_bit = int_of_bool Uint8.(logand high_byte mask != zero) in
+    (u8 @@ low_bit lor (high_bit lsl 1))
 
-  let get_address x y =
-    let x_add = x + 32 * (!base_nametable land 1) in
-    let y_add = y + 30 * (!base_nametable lsr 1) in 
-    let x_mir = x_add mod (if !mirroring_mode then 64 else 32) in
-    let y_mir = y_add mod (if !mirroring_mode then 30 else 60) in
-    let quad_nb = (y_mir / 30) * 2 + (x_mir / 32) in
-    let base = 0x2000 + 0x400 * quad_nb in
-    base, (x mod 32), (y mod 30)
+  let get_address (x : uint16) (y : uint16) =
+    let open Uint16 in
+    let x_add = x + (u16 32)
+                            * (u16of8 Uint8.(logand !base_nametable one)) in
+    let y_add = x + (u16 30) (* TODO : why 30 ? *)
+                            * (u16of8 Uint8.(shift_right_logical !base_nametable 1)) in
+    let x_mir = rem x_add (u16 (if !mirroring_mode then 64 else 32)) in
+    let y_mir = rem y_add (u16 (if !mirroring_mode then 30 else 60)) in
+    let quad_nb = (y_mir / (u16 30)) * (u16 2) + (x_mir / (u16 32)) in
+    let base = (u16 0x2000) + (u16 0x400) * quad_nb in
+    base, (rem x (u16 32)), (rem y (u16 30))
 
-  let render_background_pixel x y =
-    let x_tile = x / 8 in
-    let y_tile = y / 8 in
+  let render_background_pixel (x : uint16) (y : uint16) =
+    let x_tile = Uint16.shift_right_logical x 3 in
+    let y_tile = Uint16.shift_right_logical y 3 in
     let base_addr, x_mod, y_mod = get_address x_tile y_tile in
-    let address = base_addr + y_mod * 32 + x_mod in
-    let tile_kind = memory.(address) in
-    let color_nb = decode_chr !background_pattern_address tile_kind x y in
-    match color_nb with
-    | 0 -> None
-    | _ ->
+    let address = Uint16.(base_addr + y_mod * (u16 32) + x_mod) in
+    let tile_kind = memory.(Uint16.to_int @@ address) in
+    let color_nb = decode_chr !background_pattern_address tile_kind (u8of16 x)
+        (u8of16 y) in
+    if color_nb = (u8 0) then None
+    else
       (* Decode attribute table *)
-      let attr_table_address = base_addr + 0x3C0 in
-      let x_big = x_mod / 4 in
-      let y_big = y_mod / 4 in
-      let big_addr = attr_table_address + y_big * 8 + x_big in
-      let big_byte = memory.(big_addr) in
-      let block_offset = (((x_mod / 2) mod 2) + 2 * ((y_mod / 2) mod 2)) * 2 in
-      let palette_nb = (big_byte lsr block_offset) land 0x3 in
+      let attr_table_address = Uint16.(base_addr + (u16 0x3C0)) in
+      let x_big = Uint16.shift_right_logical x_mod 2 in
+      let y_big = Uint16.shift_right_logical y_mod 2 in
+      let big_addr = Uint16.(attr_table_address + y_big * (u16 8) + x_big) in
+      let big_byte = memory.(Uint16.to_int @@ big_addr) in
+      let block_offset =
+        ((((Uint16.to_int x_mod) / 2) mod 2) + 2 * (((Uint16.to_int y_mod) / 2) mod 2)) * 2 in
+      let palette_nb = u16of8 @@
+        Uint8.(logand (shift_right_logical big_byte block_offset) (u8 0x3)) in
       (* Get palette *)
-      let address = 0x3F00 + palette_nb * 4 + color_nb in
-      Some memory.(address)
+      let address = Uint16.((u16 0x3F00) + palette_nb * (u16 4) + (u16of8 color_nb)) in
+      Some memory.(Uint16.to_int address)
 
   let sprite_warned = ref false
 
@@ -196,27 +208,28 @@ module Rendering = struct
     let xpos = oam.(nb + 3) in
     let attributes = oam.(nb + 2) in
     let tile_nb = oam.(nb + 1) in
-    let palette = attributes land 0x3 in
+    let palette = Uint8.logand attributes (u8 0x3) in
     let flip_h = nth_bit attributes 6 in
     let flip_v = nth_bit attributes 7 in
-    let palette_addr = 0x3F10 + palette * 4 in
+    let palette_addr = Uint16.((u16 0x3F10) + (u16of8 palette) * (u16 4)) in
     for y = 0 to 7 do
-      if ypos + y < 240 then
+      if Uint8.(ypos + (u8 y)) < (u8 240) then
         for x = 0 to 7 do
-          if xpos + x < 256 then
-            let fx = if flip_h then 7 - x else x in
-            let fy = if flip_v then 7 - y else y in
-            let color_nb = decode_chr !sprite_pattern_address
-                tile_nb fx fy in
-            if color_nb != 0  then
-              let color =  memory.(palette_addr + color_nb) in
-              Display.set_pixel (x + xpos) (y + ypos) color
+          let x' = Uint8.(xpos + (u8 x)) in
+          let y' = Uint8.(ypos + (u8 y)) in
+          let fx = if flip_h then 7 - x else x in
+          let fy = if flip_v then 7 - y else y in
+          let color_nb = decode_chr !sprite_pattern_address
+              tile_nb (u8 fx) (u8 fy) in
+          if color_nb <> (u8 0)  then
+            let color =  Uint16.(memory.(to_int @@ palette_addr + u16of8 color_nb)) in
+            Display.set_pixel (Uint8.to_int x') (Uint8.to_int y') color
         done
     done
 
   let rec render_sprites after_back nb =
     if nb != 256 then (
-      if ((oam.(nb + 2) land 0x20 != 0) != after_back) then
+      if (Uint8.logand oam.(nb + 2) (u8 0x20) <> (u8 0)) <> after_back then
         render_sprite nb
       ;
       render_sprites after_back (nb + 4)
@@ -224,16 +237,19 @@ module Rendering = struct
 
   let next_cycle () =
     (* Process *)
+    (* TODO : a lot of reading https://wiki.nesdev.com/w/index.php/PPU_scrolling *)
     if !scanline >= 0 && !scanline < 240 then ((* 0 - 239 *)
       let ypos = oam.(0) in
       let xpos = oam.(3) in
-      if !scanline >= ypos && !cycle - 1 >= xpos then
+      let cycle' = !cycle - 1 in
+      if (u8 !scanline) >= ypos && (u8 cycle') >= xpos then
         sprite_0_hit := true;
-      if !show_background && !cycle > 0 && !cycle < 257 then
+      if !show_background && !cycle > 0 && !cycle <= 256 then
         (* Background *)
-        let color = render_background_pixel (!cycle - 1 +
-                                             !horizontal_scroll) (!scanline + !vertical_scroll) in
-        Option.may (Display.set_pixel (!cycle - 1) !scanline) color
+        let color = render_background_pixel
+            Uint16.((u16 cycle') + (u16of8 !horizontal_scroll))
+            Uint16.((u16 !scanline) + (u16of8 !vertical_scroll)) in
+        Option.may (Display.set_pixel cycle' !scanline) color
     );
     if !scanline = 241 && !cycle = 1 then (
       if not !vbl_read then vblank_enabled := true;
