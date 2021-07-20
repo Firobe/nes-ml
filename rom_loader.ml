@@ -1,5 +1,5 @@
 open Stdint
-open Cpu.Int_utils
+open C6502.Int_utils
 exception Invalid_ROM of string
 
 type rom_config = {
@@ -73,9 +73,9 @@ let is_in_apu_range addr = addr >= (u16 0x4000) && addr <= (u16 0x4017)
                            && addr <> (u16 0x4014)
 let is_in_cartridge_range addr = addr >= (u16 0x8000)
 
-module type MAPPER = functor (R : ROM) -> Cpu.Mmap
+module type MAPPER = functor (R : ROM) -> C6502.MemoryMap
 
-module Make_CPU (M : MAPPER) (R : ROM) = struct
+module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
   module C = M(R)
 
   let mem = Array.make 0x8000 (u8 0x00) (* Main memory *)
@@ -161,7 +161,7 @@ let load_rom path =
   Printf.printf "Mapper %d\n" config.mapper_nb ;
   let prepared_cpu = match List.assoc_opt config.mapper_nb mappers with
     | None -> raise (Invalid_ROM "Unsupported mapper")
-    | Some x -> (module (Make_CPU((val x : MAPPER))) : MAPPER)
+    | Some x -> (module (Make_NES_CPU((val x : MAPPER))) : MAPPER)
   in
   Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
   Printf.printf "CHR ROM is %d bytes\n" config.chr_rom_size;

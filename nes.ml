@@ -1,5 +1,5 @@
 open Rom_loader
-open Cpu.Int_utils
+open C6502.Int_utils
 
 exception Crash
 
@@ -18,7 +18,7 @@ let rec n_times f n =
   )
 
 let main_loop cpu limit =
-  let module NesCpu = (val cpu : Cpu.Full) in
+  let module NesCpu = (val cpu : C6502.CPU) in
   let rec aux frame limit _sup_cycle =
     Input.get_inputs ();
     if frame <> limit && (Input.continue ()) then (
@@ -36,7 +36,7 @@ let main =
   if Array.length Sys.argv > 1 then (
     let rom, pre_cpu = Rom_loader.load_rom Sys.argv.(1) in
     (* Create the CPU from the Mapper and ROM *)
-    let module NesCpu = Cpu.Make ((val pre_cpu : MAPPER) (struct let get = rom end)) in
+    let module NesCpu = C6502.MakeCPU ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
     Ppu.init NesCpu.interrupt rom.config.mirroring;
     NesCpu.Register.set `S (u8 0xFD) ;
@@ -44,10 +44,10 @@ let main =
     NesCpu.PC.init () ;
     NesCpu.enable_decimal := false ;
     (* Apu.init (); *)
-    let cpu = (module NesCpu : Cpu.Full) in
+    let cpu = (module NesCpu : C6502.CPU) in
     begin try
         main_loop cpu (-1) ;
-      with Cpu.Invalid_instruction (addr, opcode) ->
+      with C6502.Invalid_instruction (addr, opcode) ->
         Format.printf
           "The CPU encountered an invalid instruction %a at address %a.\n"
           pp_u8 opcode pp_u16 addr
