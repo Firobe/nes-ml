@@ -39,8 +39,8 @@ let main =
     let module NesCpu = C6502.MakeCPU ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
     Ppu.init NesCpu.interrupt rom.config.mirroring;
-    NesCpu.Register.set `S (u8 0xFD) ;
-    NesCpu.Register.set `P (u8 0x34) ;
+    NesCpu.Register.set `S 0xFDu ;
+    NesCpu.Register.set `P 0x34u ;
     NesCpu.PC.init () ;
     NesCpu.enable_decimal := false ;
     (* Apu.init (); *)

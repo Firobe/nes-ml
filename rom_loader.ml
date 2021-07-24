@@ -68,32 +68,31 @@ let read_header rom  =
 (* ################################ *)
 
 (* Utils *)
-let is_in_ppu_range addr = addr >= (u16 0x2000) && addr <= (u16 0x2007)
-let is_in_apu_range addr = addr >= (u16 0x4000) && addr <= (u16 0x4017)
-                           && addr <> (u16 0x4014)
-let is_in_cartridge_range addr = addr >= (u16 0x8000)
+let is_in_ppu_range addr = addr >= 0x2000U && addr <= 0x2007U
+let is_in_apu_range addr = addr >= 0x4000U && addr <= 0x4017U && addr <> 0x4014U
+let is_in_cartridge_range addr = addr >= 0x8000U
 
 module type MAPPER = functor (R : ROM) -> C6502.MemoryMap
 
 module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
   module C = M(R)
 
-  let mem = Array.make 0x8000 (u8 0x00) (* Main memory *)
+  let mem = Array.make 0x8000 0u (* Main memory *)
 
   let address_mirroring a =
     let open Uint16 in
-    if a < (u16 0x2000) then (* RAM mirroring *)
-      logand a (u16 0x07FF)
-    else if (shift_right_logical a 13) = (u16 1) then (* PPU mirroring *) (* TODO also mask ?*)
-      logand a (u16 0x2007)
+    if a < 0x2000U then (* RAM mirroring *)
+      logand a 0x07FFU
+    else if (shift_right_logical a 13) = 1U then (* PPU mirroring *) (* TODO also mask ?*)
+      logand a 0x2007U
     else a
 
   let read (a : uint16) : uint8 =
     let open Uint16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
-      Ppu.get_register (to_int (logand a (u16 0x7)))
-    else if a = (u16 0x4016) then
+      Ppu.get_register (to_int (logand a 7U))
+    else if a = 0x4016U then
       Input.next_register ()
     else if is_in_cartridge_range a then
       C.read a
@@ -103,10 +102,10 @@ module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
     let open Uint16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
-      Ppu.set_register (to_int (logand a (u16 0x7))) v
+      Ppu.set_register (to_int (logand a 7U)) v
     else if is_in_apu_range a then
       Apu.write_register v a
-    else if a = (u16 0x4014) then
+    else if a = 0x4014U then
       Ppu.dma read Uint16.(shift_left (of_uint8 v) 8)
     else if is_in_cartridge_range a then
       C.write a v
@@ -124,8 +123,8 @@ module NROM (R : ROM) = struct
       Array.blit rom.prg_rom 0 m 0x4000 0x4000;
       Array.map u8 m
 
-  let read a = prg_rom.(Uint16.(to_int @@ logand a (u16 0x7FFF)))
-  let write a v = prg_rom.(Uint16.(to_int @@ logand a (u16 0x7FFF))) <- v
+  let read a = prg_rom.(Uint16.(to_int @@ logand a 0x7FFFU))
+  let write a v = prg_rom.(Uint16.(to_int @@ logand a 0x7FFFU)) <- v
 end
 
 module UxROM (R : ROM) = struct
@@ -142,10 +141,10 @@ module UxROM (R : ROM) = struct
   let selected = ref 0
 
   let read a =
-    if a >= (u16 0xC000) then
-      last_bank.(Uint16.(to_int @@ logand a (u16 0x3FFF)))
+    if a >= 0xC000U then
+      last_bank.(Uint16.(to_int @@ logand a 0X3FFFU))
     else
-      banks.(!selected).(Uint16.(to_int @@ logand a (u16 0x3FFF)))
+      banks.(!selected).(Uint16.(to_int @@ logand a 0x3FFFU))
 
   let write _ v = selected := Uint8.to_int v
 end
