@@ -1,5 +1,4 @@
 open Tsdl
-open Bigarray
 open Stdint
 
 let width = 256
@@ -23,7 +22,7 @@ let renderer = Global.empty "renderer"
 let window = Global.empty "window"
 let texture = Global.empty "texture"
 
-let screen = Array1.create Int32 c_layout (width * height)
+let screen = Bigarray.(Array1.create Int32 c_layout (width * height))
 
 let set_pixel x y (v : uint8) =
     let color = palette.(Uint8.to_int v) in
@@ -36,14 +35,14 @@ let sdl_get = function
 
 let clear_screen back_color =
     let rgb_color = palette.(Uint8.to_int back_color) in
-    Array1.fill screen rgb_color
+    Bigarray.Array1.fill screen rgb_color
 
 let display () =
     let rend = Global.get renderer in
     let text = Global.get texture in
     let pixels, _ = sdl_get @@ Sdl.lock_texture text
         None Int32 in
-    Array1.blit screen pixels;
+    Bigarray.Array1.blit screen pixels;
     Sdl.unlock_texture text;
     sdl_get @@ Sdl.render_copy rend text ;
     Sdl.render_present rend

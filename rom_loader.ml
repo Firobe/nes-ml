@@ -1,5 +1,4 @@
 open Stdint
-open C6502.Int_utils
 exception Invalid_ROM of string
 
 type rom_config = {
@@ -116,12 +115,12 @@ module NROM (R : ROM) = struct
   let prg_rom =
     let rom = R.get in
     let bank_nb = rom.config.prg_rom_size / 0x4000 in
-    if bank_nb = 2 then Array.map u8 rom.prg_rom
+    if bank_nb = 2 then Array.map C6502.Int_utils.u8 rom.prg_rom
     else
       let m = Array.make 0x8000 0x00 in (* 32K *)
       Array.blit rom.prg_rom 0 m 0 0x4000;
       Array.blit rom.prg_rom 0 m 0x4000 0x4000;
-      Array.map u8 m
+      Array.map C6502.Int_utils.u8 m
 
   let read a = prg_rom.(Uint16.(to_int @@ logand a 0x7FFFU))
   let write a v = prg_rom.(Uint16.(to_int @@ logand a 0x7FFFU)) <- v
@@ -135,7 +134,7 @@ module UxROM (R : ROM) = struct
     let banks = Array.init bank_nb create_bank in
     for i = 0 to bank_nb - 1 do
       Array.blit rom.prg_rom (0x4000 * i) banks.(i) 0 0x4000
-    done ; Array.map (Array.map u8) banks
+    done ; Array.map (Array.map C6502.Int_utils.u8) banks
 
   let last_bank = banks.(Array.length banks - 1)
   let selected = ref 0

@@ -1,5 +1,4 @@
 open Stdint
-open C6502.Int_utils
 
 (* Important links
  * - Memory map : https://wiki.nesdev.com/w/index.php/PPU_memory_map
@@ -69,6 +68,7 @@ let palette_mirror_filter addr =
     if tmp = 0x3F10U then 0x3F00U else tmp
   else addr
 
+open C6502.Int_utils
 let set_register register (v : uint8) =
   bus_latch := v ;
   match register with
