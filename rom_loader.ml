@@ -1,5 +1,5 @@
 open Stdint
-open Cpu.Int_utils
+open C6502.Int_utils
 exception Invalid_ROM of string
 
 type rom_config = {
@@ -73,7 +73,7 @@ let is_in_apu_range addr = addr >= (u16 0x4000) && addr <= (u16 0x4017)
                            && addr <> (u16 0x4014)
 let is_in_cartridge_range addr = addr >= (u16 0x8000)
 
-module type MAPPER = functor (R : ROM) -> Cpu.Mmap
+module type MAPPER = functor (R : ROM) -> C6502.MemoryMap
 
 module Make_CPU (M : MAPPER) (R : ROM) = struct
   module C = M(R)

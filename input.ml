@@ -44,5 +44,5 @@ let next_nes_key () =
   key_pressed to_check
 
 let next_register () =
-  let open Cpu.Int_utils in
+  let open C6502.Int_utils in
   if next_nes_key () then (u8 1) else (u8 0)

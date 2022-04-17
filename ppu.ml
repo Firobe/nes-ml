@@ -1,5 +1,5 @@
 open Stdint
-open Cpu.Int_utils
+open C6502.Int_utils
 
 let memory = Array.make 0x4000 (u8 0)
 let oam = Array.make 0x100 (u8 0)
@@ -53,6 +53,7 @@ let nth_bit b n =
   Uint8.((logand b (shift_left one n)) <> zero)
 
 let palette_mirror_filter addr =
+  Printf.printf "%X\n" (Uint16.to_int addr);
   if addr >= (u16 0x3F00) then
     let tmp = Uint16.logand !ppu_address (u16 0x3F1F) in
     if tmp = (u16 0x3F10) then (u16 0x3F00) else tmp
