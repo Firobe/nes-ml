@@ -334,112 +334,122 @@ module Rendering = struct
       v := logor (logand !v (lognot 0x03E0U)) (shift_left !y 5)
     )
 
+  let fetch_next_data () =
+    (* Step number in the fetching process *)
+    let local_step = !cycle mod 8 in
+    (* Every 8 cycles (9, 17, 25, ..., 257 *)
+    (* Actual memory fetching *)
+    (* Only 12 first bits of address should be used *)
+    begin match local_step with
+      | 0 when !cycle = 0 ->
+        (*Printf.printf "addr %X scanline %d\n"
+          (Uint16.to_int !ppu_address) !scanline*) ()
+      | 0 when !cycle <> 0 ->
+        if !cycle = 256 then inc_vert ppu_address
+        else inc_hori ppu_address
+      | 1 ->
+        if !cycle <> 0 then (
+          (* Reload shifters *)
+          shift16_1 := mk_addr ~hi:!shift16_latch_low ~lo:(get_lo !shift16_1) ;
+          shift16_2 := mk_addr ~hi:!shift16_latch_high ~lo:(get_lo !shift16_2) ;
+          at := Uint8.(logand !at_latch 0x3u);
+        );
+        (* load NT byte to shift8_nt_latch *)
+        let open Uint16 in
+        let v = !ppu_address in
+        let tile_address = logor 0x2000U (logand v 0xFFFU) in
+        nt_latch := memory.(Uint16.to_int tile_address)
+      | 3 ->
+        (* load AT byte to shift8_at_latch
+           The low 12 bits of the attribute address are composed in the following way:
+           NN 1111 YYY XXX
+           || |||| ||| +++-- high 3 bits of coarse X (x/4)
+           || |||| +++------ high 3 bits of coarse Y (y/4)
+           || ++++---------- attribute offset (960 bytes)
+           ++--------------- nametable select *)
+        let open Uint16 in
+        let v = !ppu_address in
+        let attribute_base =0x23C0U + (logand v 0x0C00U) in
+        let coarse_y = logand 0x38U (shift_right_logical v 4) in
+        let coarse_x = logand 0x07U (shift_right_logical v 2) in
+        let attribute_address = attribute_base + coarse_x + coarse_y in
+        at_latch := memory.(to_int attribute_address) 
+      | 5 -> (* load low BG tile byte to shift16_latch_low (pattern table)
+                PPU addresses within the pattern tables can be decoded as follows:
+                0HRRRR CCCCPTTT
+                |||||| |||||+++- T: Fine Y offset, the row number within a tile
+                |||||| ||||+---- P: Bit plane (0: "lower"; 1: "upper")
+                |||||| ++++----- C: Tile column
+                ||++++---------- R: Tile row
+                |+-------------- H: Half of sprite table (0: "left"; 1: "right")
+                +--------------- 0: Pattern table is at $0000-$1FFF *)
+        let open Uint16 in
+        let v = !ppu_address in
+        let finey = shift_right_logical (logand v 0x7000U) 12 in
+        let tile_offset = (of_uint8 !nt_latch * 16U) in
+        let addr = !background_pattern_address + tile_offset + finey in
+        shift16_latch_low := memory.(to_int addr);
+      | 7 ->
+        (* load high BG tile byte to shift16_latch_high
+         * same as above with additional bit *)
+        let open Uint16 in
+        let finey = shift_right_logical (logand !ppu_address 0x7000U) 12 in
+        let tile_offset = (of_uint8 !nt_latch * 16U)  in
+        let addr = !background_pattern_address + tile_offset + finey + 8U in
+        shift16_latch_high := memory.(to_int addr);
+      | _ -> ()
+    end
+
+  let render_pixel disp =
+    let open Uint16 in
+    (* TODO check this is correct *)
+    let scroll = Uint8.to_int !fine_x_scroll in
+    let patl = logand (shift_right !shift16_1 scroll) 0x1U in
+    let path = logand (shift_right !shift16_2 scroll) 0x1U in
+    let pat = logor (shift_left path 1) patl |> Uint16.to_uint8 in
+    let open Uint8 in
+    let pal = !at in
+    let x = of_int !cycle in
+    let y = of_int !scanline in
+    draw_pixel disp x y 0x3F00U ~pal ~pat
+
+  let data_fetching disp render =
+    (* Cycles 0 - 256 : BACKGROUND FETCHING *)
+    if !cycle <= 256 && !show_background then (
+      fetch_next_data ();
+      (* Pixel rendering *)
+      if render then (render_pixel disp);
+      (* Shift registers *)
+      shift1_16 shift16_1 ;
+      shift1_16 shift16_2
+    )
+    (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
+    else if !cycle <= 320 then (
+      (* If rendering is enabled, the PPU copies all bits related to
+       * horizontal position from t to v *)
+      (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
+      if !cycle = 257 && !show_background then (
+        let mask = 0b000010000011111U in
+        let to_set = Uint16.logand !temp_vram_address mask in
+        let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
+        ppu_address := Uint16.logor to_set with_hole
+      )
+      (* TODO sprites *)
+    )
+    (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
+    else if !cycle <= 336 && !show_background then (
+      fetch_next_data () ;
+      shift1_16 shift16_1 ;
+      shift1_16 shift16_2
+    )
+    (* Cycles 337-340 : USELESS *)
+    else ()
+
   let next_cycle disp =
     (* Process *)
     (* Visible scanlines : 0 - 239 *)
     if !scanline <= 239 then (
-      (* Cycles 0 - 256 : BACKGROUND FETCHING *)
-      if !cycle <= 256 && !show_background then (
-        (* Step number in the fetching process *)
-        let local_step = !cycle mod 8 in
-        (* Every 8 cycles (9, 17, 25, ..., 257 *)
-        (* Actual memory fetching *)
-        (* Only 12 first bits of address should be used *)
-        begin match local_step with
-        | 0 when !cycle = 0 ->
-          (*Printf.printf "addr %X scanline %d\n"
-            (Uint16.to_int !ppu_address) !scanline*) ()
-        | 0 when !cycle <> 0 ->
-          if !cycle = 256 then inc_vert ppu_address
-          else inc_hori ppu_address
-        | 1 ->
-          if !cycle <> 0 then (
-            (* Reload shifters *)
-            shift16_1 := mk_addr ~hi:!shift16_latch_low ~lo:(get_lo !shift16_1) ;
-            shift16_2 := mk_addr ~hi:!shift16_latch_high ~lo:(get_lo !shift16_2) ;
-            at := Uint8.(logand !at_latch 0x3u);
-          );
-          (* load NT byte to shift8_nt_latch *)
-          let open Uint16 in
-          let v = !ppu_address in
-          let tile_address = logor 0x2000U (logand v 0xFFFU) in
-          nt_latch := memory.(Uint16.to_int tile_address)
-        | 3 ->
-          (* load AT byte to shift8_at_latch
-        The low 12 bits of the attribute address are composed in the following way:
-         NN 1111 YYY XXX
-         || |||| ||| +++-- high 3 bits of coarse X (x/4)
-         || |||| +++------ high 3 bits of coarse Y (y/4)
-         || ++++---------- attribute offset (960 bytes)
-         ++--------------- nametable select *)
-          let open Uint16 in
-          let v = !ppu_address in
-          let attribute_base =0x23C0U + (logand v 0x0C00U) in
-          let coarse_y = logand 0x38U (shift_right_logical v 4) in
-          let coarse_x = logand 0x07U (shift_right_logical v 2) in
-          let attribute_address = attribute_base + coarse_x + coarse_y in
-          at_latch := memory.(to_int attribute_address) 
-        | 5 -> (* load low BG tile byte to shift16_latch_low (pattern table)
-        PPU addresses within the pattern tables can be decoded as follows:
-        0HRRRR CCCCPTTT
-        |||||| |||||+++- T: Fine Y offset, the row number within a tile
-        |||||| ||||+---- P: Bit plane (0: "lower"; 1: "upper")
-        |||||| ++++----- C: Tile column
-        ||++++---------- R: Tile row
-        |+-------------- H: Half of sprite table (0: "left"; 1: "right")
-        +--------------- 0: Pattern table is at $0000-$1FFF *)
-          let open Uint16 in
-          let v = !ppu_address in
-          let finey = shift_right_logical (logand v 0x7000U) 12 in
-          let tile_offset = (of_uint8 !nt_latch * 16U) in
-          let addr = !background_pattern_address + tile_offset + finey in
-          shift16_latch_low := memory.(to_int addr);
-        | 7 ->
-          (* load high BG tile byte to shift16_latch_high
-           * same as above with additional bit *)
-          let open Uint16 in
-          let finey = shift_right_logical (logand !ppu_address 0x7000U) 12 in
-          let tile_offset = (of_uint8 !nt_latch * 16U)  in
-          let addr = !background_pattern_address + tile_offset + finey + 8U in
-          shift16_latch_high := memory.(to_int addr);
-        | _ -> ()
-        end ;
-          (* Pixel rendering *)
-        let open Uint16 in
-        (* TODO check this is correct *)
-        let scroll = Uint8.to_int !fine_x_scroll in
-        let patl = logand (shift_right !shift16_1 scroll) 0x1U in
-        let path = logand (shift_right !shift16_2 scroll) 0x1U in
-        let pat = logor (shift_left path 1) patl |> Uint16.to_uint8 in
-        let open Uint8 in
-        let pal = !at in
-        let x = of_int !cycle in
-        let y = of_int !scanline in
-        (*Printf.printf "%d %d\n%!" (Uint8.to_int pat) (Uint8.to_int pal);*)
-        draw_pixel disp x y 0x3F00U ~pal ~pat;
-        (* Shift registers *)
-        shift1_16 shift16_1 ;
-        shift1_16 shift16_2
-      )
-      (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
-      else if !cycle <= 320 then (
-        (* If rendering is enabled, the PPU copies all bits related to
-         * horizontal position from t to v *)
-        (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
-        if !cycle = 257 && !show_background then (
-          let mask = 0b000010000011111U in
-          let to_set = Uint16.logand !temp_vram_address mask in
-          let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
-          ppu_address := Uint16.logor to_set with_hole
-        )
-        (* TODO *)
-      )
-      (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
-      else if !cycle <= 336 then (
-        (* TODO *)
-      )
-      (* Cycles 337-340 : USELESS *)
-      else ()
+      data_fetching disp true
     )
     (* Post-render scanline : 240  (IDLE) *)
     else if !scanline = 240 then ()
@@ -453,7 +463,8 @@ module Rendering = struct
     else if !scanline <= 260 then ()
     (* Pre-rendering scanline *)
     else (
-      (* TODO tile fetching for next frame *)
+      (* Fetch data for next frame *)
+      data_fetching disp false;
       (*  If rendering is enabled, at the end of vblank, shortly after
        *  the horizontal bits are copied from t to v at dot 257, the PPU
        *  will repeatedly copy the vertical bits from t to v from dots
@@ -466,14 +477,13 @@ module Rendering = struct
       )
       (* Final dot : change everything *)
       else if !cycle = 340 then (
-        sprite_0_hit := false ;
+        sprite_0_hit := false ; (* this should be at cycle 1 *)
         incr frame ;
         (*render_sprites true 0 ;*)
         Display.render disp;
         Display.clear disp memory.(0x3F00);
         (*render_sprites false 0 ;*)
         vblank_enabled := false ;
-        (*Printf.printf "frame %d\n%!" !frame;*)
         (* Odd frame : jump to (0, 0) directly *)
         if (!frame mod 2) = 1 && !show_background then (
           scanline := 0;
