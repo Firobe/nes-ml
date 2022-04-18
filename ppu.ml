@@ -235,31 +235,6 @@ module Rendering = struct
     let address = Uint16.(start + (u16of8 nb) * 4U + (u16of8 ind)) in
     memory.(Uint16.to_int address)
 
-  (*
-  let render_background_pixel (x : uint16) (y : uint16) =
-    let x_tile = Uint16.shift_right_logical x 3 in
-    let y_tile = Uint16.shift_right_logical y 3 in
-    let base_addr, x_mod, y_mod = get_address x_tile y_tile in
-    let address = Uint16.(base_addr + y_mod * (u16 32) + x_mod) in
-    let tile_kind = memory.(Uint16.to_int @@ address) in
-    let color_nb = decode_chr !background_pattern_address tile_kind (u8of16 x)
-        (u8of16 y) in
-    if color_nb = (u8 0) then None
-    else
-      (* Decode attribute table *)
-      let attr_table_address = Uint16.(base_addr + (u16 0x3C0)) in
-      let x_big = Uint16.shift_right_logical x_mod 2 in
-      let y_big = Uint16.shift_right_logical y_mod 2 in
-      let big_addr = Uint16.(attr_table_address + y_big * (u16 8) + x_big) in
-      let big_byte = memory.(Uint16.to_int @@ big_addr) in
-      let block_offset =
-        ((((Uint16.to_int x_mod) / 2) mod 2) + 2 * (((Uint16.to_int y_mod) / 2) mod 2)) * 2 in
-      let palette_nb = 
-        Uint8.(logand (shift_right_logical big_byte block_offset) (u8 0x3)) in
-      (* Get palette *)
-      Some (palette_ind_to_color (u16 0x3F00) palette_nb color_nb)
-     *)
-
   let sprite_warned = ref false
 
   let draw_pixel x y pal_start ~pal:palette_nb ~pat:color_nb =
@@ -330,30 +305,57 @@ module Rendering = struct
    * - pattern table: defines different patterns
    *)
 
+  let inc_hori v =
+    let open Uint16 in
+    let coarse = logand !v 0x001FU in
+    if coarse = 0x1FU then (
+      v := logand !v (neg 0x1FU);
+      v := logxor !v 0x0400U;
+    )
+    else v := !v + 1U
+
+  let inc_vert v =
+    let open Uint16 in
+    if (logand !v 0x7000U) <> 0x7000U then
+      v := !v + 0x1000U
+    else (
+      v := logand !v (neg 0x7000U);
+      let y = ref (shift_right_logical (logand !v 0x03E0U) 5) in
+      if !y = 29U then (
+        y := 0U;
+        v := logxor !v 0x0800U
+      )
+      else if !y = 31U then (
+        y := 0U
+      )
+      else (
+        y := !y + 1U
+      ) ;
+      v := logor (logand !v (neg 0x03E0U)) (shift_left !y 5)
+    )
+
   let next_cycle () =
-    (* TODO increment vert address at cycle 256 *)
     (* Process *)
     (* Visible scanlines : 0 - 239 *)
     if !scanline <= 239 then (
-      (* Cycle 0 : IDLE *)
-      if !cycle = 0 then ()
-      (* Cycles 1 - 256 : BACKGROUND FETCHING *)
-      else if !cycle <= 256 && !show_background then (
+      (* Cycles 0 - 256 : BACKGROUND FETCHING *)
+      if !cycle <= 256 && !show_background then (
         (* Step number in the fetching process *)
-        let local_step = (!cycle - 1) mod 8 in
+        let local_step = !cycle mod 8 in
         (* Every 8 cycles (9, 17, 25, ..., 257 *)
-        if !cycle >= 9 && local_step = 0 then (
-          (* Reload shifters *)
-          (* TODO process AT and NT to store palette attributes *)
-          (*Printf.printf "%x\n%!" (Uint8.to_int !shift16_latch_high);*)
-          shift16_1 := mk_addr ~hi:!shift16_latch_low ~lo:(get_lo !shift16_1) ;
-          shift16_2 := mk_addr ~hi:!shift16_latch_high ~lo:(get_lo !shift16_2) ;
-          at := Uint8.(logand !at_latch 0x3u)
-        ) ;
         (* Actual memory fetching *)
         (* Only 12 first bits of address should be used *)
         match local_step with
+        | 0 when !cycle <> 0 ->
+          if !cycle = 256 then inc_vert ppu_address
+          else inc_hori ppu_address
         | 1 ->
+          if !cycle <> 0 then (
+            (* Reload shifters *)
+            shift16_1 := mk_addr ~hi:!shift16_latch_low ~lo:(get_lo !shift16_1) ;
+            shift16_2 := mk_addr ~hi:!shift16_latch_high ~lo:(get_lo !shift16_2) ;
+            at := Uint8.(logand !at_latch 0x3u);
+          );
           (* load NT byte to shift8_nt_latch *)
           let open Uint16 in
           let v = !ppu_address in
@@ -397,8 +399,6 @@ module Rendering = struct
           let tile_offset = (of_uint8 !nt_latch * 16U)  in
           let addr = !background_pattern_address + tile_offset + finey + 8U in
           shift16_latch_high := memory.(to_int addr);
-          (* inc hori *) (* TODO correctly *)
-          ppu_address := !ppu_address + 1U
         | _ -> ()
           ;
           (* Pixel rendering *)
@@ -496,29 +496,6 @@ module Rendering = struct
 end
 
 [@@@warning "+32"]
-
-(*
-let debug_vram scale =
-    Graphics.open_graph "";
-    Graphics.resize_window (256 * scale) (128 * scale);
-    for x = 0 to 31 do
-        for y = 0 to 15 do
-            for x_loc = 0 to 7 do
-                for y_loc = 0 to 7 do
-                    let kind = decode_chr 0 (x * 16 + y) x_loc y_loc in
-                    let gr = kind * 64 in
-                    Graphics.set_color (Graphics.rgb gr gr gr);
-                    Graphics.fill_rect (scale * (x * 8 + x_loc))
-                        (scale * (y*8 + y_loc)) scale scale;
-                done
-            done;
-            let str = Printf.sprintf "%X" (16*(x * 16 + y)) in
-            Graphics.moveto (scale * (x * 8)) (scale * (y*8));
-            Graphics.set_color Graphics.red;
-            Graphics.draw_string str
-        done
-    done
-*)
 
 let init ic mm =
   interrupt_cpu := Some ic;
