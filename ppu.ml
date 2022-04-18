@@ -309,7 +309,7 @@ module Rendering = struct
     let open Uint16 in
     let coarse = logand !v 0x001FU in
     if coarse = 0x1FU then (
-      v := logand !v (neg 0x1FU);
+      v := logand !v (lognot 0x1FU);
       v := logxor !v 0x0400U;
     )
     else v := !v + 1U
@@ -319,7 +319,7 @@ module Rendering = struct
     if (logand !v 0x7000U) <> 0x7000U then
       v := !v + 0x1000U
     else (
-      v := logand !v (neg 0x7000U);
+      v := logand !v (lognot 0x7000U);
       let y = ref (shift_right_logical (logand !v 0x03E0U) 5) in
       if !y = 29U then (
         y := 0U;
@@ -331,7 +331,7 @@ module Rendering = struct
       else (
         y := !y + 1U
       ) ;
-      v := logor (logand !v (neg 0x03E0U)) (shift_left !y 5)
+      v := logor (logand !v (lognot 0x03E0U)) (shift_left !y 5)
     )
 
   let next_cycle disp =
@@ -346,6 +346,9 @@ module Rendering = struct
         (* Actual memory fetching *)
         (* Only 12 first bits of address should be used *)
         match local_step with
+        | 0 when !cycle = 0 ->
+          (*Printf.printf "addr %X scanline %d\n"
+            (Uint16.to_int !ppu_address) !scanline*) ()
         | 0 when !cycle <> 0 ->
           if !cycle = 256 then inc_vert ppu_address
           else inc_hori ppu_address
@@ -446,7 +449,7 @@ module Rendering = struct
        *  the horizontal bits are copied from t to v at dot 257, the PPU
        *  will repeatedly copy the vertical bits from t to v from dots
        *  280 to 304, completing the full initialization of v from t: *)
-      if !cycle >= 280 && !cycle <= 304 then (
+      if !cycle >= 280 && !cycle <= 304 && !show_background then (
           let mask = u16 0b111101111100000 in
           let to_set = Uint16.logand !temp_vram_address mask in
           let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
@@ -472,14 +475,11 @@ module Rendering = struct
     (* If rendering is enabled, the PPU copies all bits related to
      * horizontal position from t to v *)
     (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
-    if !cycle = 257 then (
+    if !cycle = 257 && !show_background then (
       let mask = 0b000010000011111U in
-      let _to_set = Uint16.logand !temp_vram_address mask in
-      let _with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
-      (* TODO FIX, this corrupts PPU address (palette fails to load, for example
-       *
-      ppu_address := Uint16.logor to_set with_hole*)
-      ()
+      let to_set = Uint16.logand !temp_vram_address mask in
+      let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
+      ppu_address := Uint16.logor to_set with_hole
     ) ;
     (* Next cycle *)
     incr cycle;
