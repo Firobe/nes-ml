@@ -12,7 +12,7 @@ let rec n_times f n =
 
 type disps = {
   main : Display.t;
-  debug : (Display.t option) ref
+  debug : (Ppu.Debug.t option) ref
 }
 
 let main_loop disps cpu limit =
@@ -21,11 +21,11 @@ let main_loop disps cpu limit =
     Input.get_inputs ();
     if frame <> limit && (Input.continue ()) then (
       if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
-        disps.debug := Some (Ppu.init_debug ())
+        disps.debug := Some (Ppu.Debug.init ())
       )
       else if Input.(key_pressed Debug_off) then (
         match !(disps.debug) with
-        | Some d -> Display.delete d; disps.debug := None
+        | Some d -> Ppu.Debug.delete d; disps.debug := None
         | None -> ()
       );
       (* NesCpu.print_state (); *)
@@ -34,7 +34,7 @@ let main_loop disps cpu limit =
       let elapsed = !NesCpu.cycle_count - old in
       (* n_times Apu.next_cycle ((elapsed + sup_cycle) / 2); *)
       n_times (fun () -> Ppu.next_cycle disps.main) (elapsed * 3);
-      Ppu.debug !(disps.debug);
+      Ppu.Debug.render !(disps.debug);
       aux (frame + 1) limit (elapsed mod 2)
     )
   in aux 0 limit 0

@@ -504,13 +504,26 @@ let exit () =
   dump_memory ();
   Display.exit ()
 
-let init_debug () = Display.create ~width:64 ~height:60 ~scale:8 "Nametables"
+module Debug = struct
 
-let debug_cooldown = 1000
-let debug_counter = ref 0
-let debug = function
-  | None -> ()
-  | Some disp ->
+  type t = {
+    names : Display.t;
+    attributes : Display.t
+  }
+
+  let init () = {
+    names = Display.create ~width:64 ~height:60 ~scale:8 "Nametables";
+    attributes = Display.create ~width:32 ~height:32 ~scale:16 "Attributes"
+  }
+
+  let delete t =
+    Display.delete t.names;
+    Display.delete t.attributes
+
+  let cooldown = 1000
+  let counter = ref 0
+
+  let render_nametables disp =
     let set_nametable addr x_orig y_orig =
       for y = 0 to 29 do
         for x = 0 to 31 do
@@ -520,12 +533,46 @@ let debug = function
         done
       done
     in
-    if !debug_counter = 0 then (
-      set_nametable 0x2000 0 0;
-      set_nametable 0x2400 32 0;
-      set_nametable 0x2800 0 30;
-      set_nametable 0x2C00 32 30;
-      Display.render disp;
-      debug_counter := debug_cooldown
-    );
-    decr debug_counter;
+    set_nametable 0x2000 0 0;
+    set_nametable 0x2400 32 0;
+    set_nametable 0x2800 0 30;
+    set_nametable 0x2C00 32 30
+
+  let render_attributes disp =
+    let set_attr addr x_orig y_orig =
+      for y = 0 to 7 do
+        for x = 0 to 7 do
+          let addr = addr + y * 8 + x in
+          let v = memory.(addr) in
+          let x' = x * 2 + x_orig in
+          let y' = y * 2 + y_orig in
+          let open Uint8 in
+          let top_left = logand 0x3u v * 4u in
+          let top_right = logand (shift_right_logical v 2) 0x3u * 4u in
+          let bot_left = logand (shift_right_logical v 4) 0x3u * 4u in
+          let bot_right = logand (shift_right_logical v 6) 0x3u * 4u in
+          let open Stdlib in
+          Display.set_pixel disp ~x:x' ~y:y' ~color:top_left;
+          Display.set_pixel disp ~x:(x'+1) ~y:y' ~color:top_right;
+          Display.set_pixel disp ~x:x' ~y:(y'+1) ~color:bot_left;
+          Display.set_pixel disp ~x:(x'+1) ~y:(y'+1) ~color:bot_right;
+        done
+      done
+    in
+    set_attr 0x23C0 0 0;
+    set_attr 0x27C0 16 0;
+    set_attr 0x2BC0 0 16;
+    set_attr 0x2FC0 16 16
+
+  let render = function
+    | None -> ()
+    | Some {names; attributes} ->
+      if !counter = 0 then (
+        render_nametables names;
+        render_attributes attributes;
+        Display.render names;
+        Display.render attributes;
+        counter := cooldown
+      );
+      decr counter;
+end
