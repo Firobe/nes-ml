@@ -12,4 +12,7 @@ val exit : unit -> unit
 (* val dump_memory : unit -> unit *)
 val next_cycle : Display.t -> unit
 
+val init_debug : unit -> Display.t
+val debug : Display.t option -> unit
+
 (* val debug_vram : int -> unit *)

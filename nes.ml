@@ -10,17 +10,31 @@ let rec n_times f n =
     f (); n_times f (n - 1)
   )
 
-let main_loop disp cpu limit =
+type disps = {
+  main : Display.t;
+  debug : (Display.t option) ref
+}
+
+let main_loop disps cpu limit =
   let module NesCpu = (val cpu : C6502.CPU) in
   let rec aux frame limit _sup_cycle =
     Input.get_inputs ();
     if frame <> limit && (Input.continue ()) then (
+      if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
+        disps.debug := Some (Ppu.init_debug ())
+      )
+      else if Input.(key_pressed Debug_off) then (
+        match !(disps.debug) with
+        | Some d -> Display.delete d; disps.debug := None
+        | None -> ()
+      );
       (* NesCpu.print_state (); *)
       let old = !NesCpu.cycle_count in
       NesCpu.fetch_instr ();
       let elapsed = !NesCpu.cycle_count - old in
       (* n_times Apu.next_cycle ((elapsed + sup_cycle) / 2); *)
-      n_times (fun () -> Ppu.next_cycle disp) (elapsed * 3);
+      n_times (fun () -> Ppu.next_cycle disps.main) (elapsed * 3);
+      Ppu.debug !(disps.debug);
       aux (frame + 1) limit (elapsed mod 2)
     )
   in aux 0 limit 0
@@ -32,7 +46,10 @@ let main =
     (* Create the CPU from the Mapper and ROM *)
     let module NesCpu = C6502.MakeCPU ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
-    let disp = Display.create_main () in
+    let disps = {
+      main = Display.create_main ();
+      debug = ref None
+    } in
     Ppu.init NesCpu.interrupt rom.config.mirroring;
     NesCpu.Register.set `S 0xFDu ;
     NesCpu.Register.set `P 0x34u ;
@@ -41,7 +58,7 @@ let main =
     (* Apu.init (); *)
     let cpu = (module NesCpu : C6502.CPU) in
     begin try
-        main_loop disp cpu (-1) ;
+        main_loop disps cpu (-1) ;
       with C6502.Invalid_instruction (addr, opcode) ->
         Format.printf
           "The CPU encountered an invalid instruction %a at address %a.\n"

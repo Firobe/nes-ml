@@ -17,16 +17,16 @@ let sdl_get = function
   | Error _ -> failwith "Unknown SDL error encountered"
   | Ok obj -> obj
 
-let create ~width ~height ~scale =
+let create ~width ~height ~scale title =
   let screen = Array1.create Int32 c_layout (width * height) in
   let s_width = scale * width in
   let s_height = scale * height in
-  let window = sdl_get @@ Sdl.create_window ~w:s_width ~h:s_height "NES" Sdl.Window.opengl in
+  let window = sdl_get @@ Sdl.create_window ~w:s_width ~h:s_height title Sdl.Window.opengl in
   let flags = Sdl.Renderer.(+) Sdl.Renderer.accelerated Sdl.Renderer.accelerated in
   let renderer = sdl_get @@ Sdl.create_renderer ~flags window in
   (*     let pal = sdl_get @@ Sdl.alloc_palette (Array.length palette) in *)
   let texture = sdl_get @@ Sdl.create_texture renderer Sdl.Pixel.format_rgb888
-      Sdl.Texture.access_streaming ~w:256 ~h:240 in
+      Sdl.Texture.access_streaming ~w:width ~h:height in
   {renderer; window; texture; width; height; scale; screen}
 
 let delete t =
@@ -34,7 +34,7 @@ let delete t =
   Sdl.destroy_renderer t.renderer;
   Sdl.destroy_window t.window
 
-let create_main () = create ~width:256 ~height:240 ~scale:4
+let create_main () = create ~width:256 ~height:240 ~scale:4 "NES"
 
 let palette = Array.of_list @@ List.map Int32.of_int
     [0x7C7C7C; 0x0000FC; 0x0000BC; 0x4428BC; 0x940084; 0xA80020; 0xA81000; 0x881400;
@@ -47,7 +47,8 @@ let palette = Array.of_list @@ List.map Int32.of_int
      0xF8D878; 0xD8F878; 0xB8F8B8; 0xB8F8D8; 0x00FCFC; 0xF8D8F8; 0x000000; 0x000000]
 
 let set_pixel t ~x ~y ~(color : uint8) =
-  let color = palette.(Uint8.to_int color) in
+  let ind = (Uint8.to_int color) mod 64 in
+  let color = palette.(ind) in
   t.screen.{y * t.width + x} <- color
 
 let clear t back_color =

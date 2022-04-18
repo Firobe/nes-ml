@@ -494,8 +494,6 @@ module Rendering = struct
     vbl_read := false
 end
 
-[@@@warning "+32"]
-
 let init ic mm =
   interrupt_cpu := Some ic;
   mirroring_mode := mm
@@ -505,3 +503,29 @@ let next_cycle = Rendering.next_cycle
 let exit () =
   dump_memory ();
   Display.exit ()
+
+let init_debug () = Display.create ~width:64 ~height:60 ~scale:8 "Nametables"
+
+let debug_cooldown = 1000
+let debug_counter = ref 0
+let debug = function
+  | None -> ()
+  | Some disp ->
+    let set_nametable addr x_orig y_orig =
+      for y = 0 to 29 do
+        for x = 0 to 31 do
+          let addr = addr + y * 32 + x in
+          let v = memory.(addr) in
+          Display.set_pixel disp ~x:(x + x_orig) ~y:(y + y_orig) ~color:v
+        done
+      done
+    in
+    if !debug_counter = 0 then (
+      set_nametable 0x2000 0 0;
+      set_nametable 0x2400 32 0;
+      set_nametable 0x2800 0 30;
+      set_nametable 0x2C00 32 30;
+      Display.render disp;
+      debug_counter := debug_cooldown
+    );
+    decr debug_counter;
