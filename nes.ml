@@ -5,18 +5,12 @@ let load_rom_memory rom =
   Array.blit (Array.map C6502.Int_utils.u8 rom.chr_rom)
     0 Ppu.memory 0x0 (rom.config.chr_rom_size)
 
-let rec ppu_exec_n_cycles n =
-  if n > 0 then (
-    Ppu.next_cycle ();
-    ppu_exec_n_cycles (n - 1)
-  )
-
 let rec n_times f n =
   if n > 0 then (
     f (); n_times f (n - 1)
   )
 
-let main_loop cpu limit =
+let main_loop disp cpu limit =
   let module NesCpu = (val cpu : C6502.CPU) in
   let rec aux frame limit _sup_cycle =
     Input.get_inputs ();
@@ -26,7 +20,7 @@ let main_loop cpu limit =
       NesCpu.fetch_instr ();
       let elapsed = !NesCpu.cycle_count - old in
       (* n_times Apu.next_cycle ((elapsed + sup_cycle) / 2); *)
-      n_times Ppu.next_cycle (elapsed * 3);
+      n_times (fun () -> Ppu.next_cycle disp) (elapsed * 3);
       aux (frame + 1) limit (elapsed mod 2)
     )
   in aux 0 limit 0
@@ -38,6 +32,7 @@ let main =
     (* Create the CPU from the Mapper and ROM *)
     let module NesCpu = C6502.MakeCPU ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
+    let disp = Display.create_main () in
     Ppu.init NesCpu.interrupt rom.config.mirroring;
     NesCpu.Register.set `S 0xFDu ;
     NesCpu.Register.set `P 0x34u ;
@@ -46,7 +41,7 @@ let main =
     (* Apu.init (); *)
     let cpu = (module NesCpu : C6502.CPU) in
     begin try
-        main_loop cpu (-1) ;
+        main_loop disp cpu (-1) ;
       with C6502.Invalid_instruction (addr, opcode) ->
         Format.printf
           "The CPU encountered an invalid instruction %a at address %a.\n"

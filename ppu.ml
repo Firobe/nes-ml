@@ -237,11 +237,10 @@ module Rendering = struct
 
   let sprite_warned = ref false
 
-  let draw_pixel x y pal_start ~pal:palette_nb ~pat:color_nb =
+  let draw_pixel disp x y pal_start ~pal:palette_nb ~pat:color_nb =
     if color_nb <> 0u then
       let color = palette_ind_to_color pal_start palette_nb color_nb in
-      Display.set_pixel (Uint8.to_int x) (Uint8.to_int y) color
-
+      Display.set_pixel disp ~x:(Uint8.to_int x) ~y:(Uint8.to_int y) ~color
 
   let render_sprite nb f =
     if !sprite_size && not !sprite_warned then (
@@ -268,12 +267,12 @@ module Rendering = struct
         done
     done
 
-  let rec render_sprites after_back nb =
+  let rec render_sprites disp after_back nb =
     if nb != 256 then (
       if (Uint8.logand oam.(nb + 2) 0x20u <> 0u) <> after_back then
-        render_sprite nb draw_pixel
+        render_sprite nb (draw_pixel disp)
       ;
-      render_sprites after_back (nb + 4)
+      render_sprites disp after_back (nb + 4)
     )
 
   let get_sprite_zero_pixels () =
@@ -334,7 +333,7 @@ module Rendering = struct
       v := logor (logand !v (neg 0x03E0U)) (shift_left !y 5)
     )
 
-  let next_cycle () =
+  let next_cycle disp =
     (* Process *)
     (* Visible scanlines : 0 - 239 *)
     if !scanline <= 239 then (
@@ -414,7 +413,7 @@ module Rendering = struct
         (*Printf.printf "%d %d\n%!" (Uint8.to_int pat) (Uint8.to_int pal);*)
         (*Printf.printf "x %d y %d (%d, %d)\n" !cycle !scanline (to_int pal)
          * (to_int pat);*)
-        draw_pixel x y 0x3F00U ~pal ~pat;
+        draw_pixel disp x y 0x3F00U ~pal ~pat;
         (* Shift registers *)
         shift1_16 shift16_1 ;
         shift1_16 shift16_2
@@ -457,8 +456,8 @@ module Rendering = struct
         sprite_0_hit := false ;
         incr frame ;
         (*render_sprites true 0 ;*)
-        Display.display () ;
-        Display.clear_screen memory.(0x3F00);
+        Display.render disp;
+        Display.clear disp memory.(0x3F00);
         (*render_sprites false 0 ;*)
         vblank_enabled := false ;
         (*Printf.printf "frame %d\n%!" !frame;*)
@@ -499,8 +498,7 @@ end
 
 let init ic mm =
   interrupt_cpu := Some ic;
-  mirroring_mode := mm;
-  Display.init ()
+  mirroring_mode := mm
 
 let next_cycle = Rendering.next_cycle
 

@@ -10,6 +10,6 @@ val init : (unit -> unit) -> bool -> unit
 val exit : unit -> unit
 
 (* val dump_memory : unit -> unit *)
-val next_cycle : unit -> unit
+val next_cycle : Display.t -> unit
 
 (* val debug_vram : int -> unit *)
