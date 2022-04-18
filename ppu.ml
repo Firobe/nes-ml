@@ -345,7 +345,7 @@ module Rendering = struct
         (* Every 8 cycles (9, 17, 25, ..., 257 *)
         (* Actual memory fetching *)
         (* Only 12 first bits of address should be used *)
-        match local_step with
+        begin match local_step with
         | 0 when !cycle = 0 ->
           (*Printf.printf "addr %X scanline %d\n"
             (Uint16.to_int !ppu_address) !scanline*) ()
@@ -403,9 +403,10 @@ module Rendering = struct
           let addr = !background_pattern_address + tile_offset + finey + 8U in
           shift16_latch_high := memory.(to_int addr);
         | _ -> ()
-          ;
+        end ;
           (* Pixel rendering *)
         let open Uint16 in
+        (* TODO check this is correct *)
         let scroll = Uint8.to_int !fine_x_scroll in
         let patl = logand (shift_right !shift16_1 scroll) 0x1U in
         let path = logand (shift_right !shift16_2 scroll) 0x1U in
@@ -415,8 +416,6 @@ module Rendering = struct
         let x = of_int !cycle in
         let y = of_int !scanline in
         (*Printf.printf "%d %d\n%!" (Uint8.to_int pat) (Uint8.to_int pal);*)
-        (*Printf.printf "x %d y %d (%d, %d)\n" !cycle !scanline (to_int pal)
-         * (to_int pat);*)
         draw_pixel disp x y 0x3F00U ~pal ~pat;
         (* Shift registers *)
         shift1_16 shift16_1 ;
@@ -424,6 +423,15 @@ module Rendering = struct
       )
       (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
       else if !cycle <= 320 then (
+        (* If rendering is enabled, the PPU copies all bits related to
+         * horizontal position from t to v *)
+        (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
+        if !cycle = 257 && !show_background then (
+          let mask = 0b000010000011111U in
+          let to_set = Uint16.logand !temp_vram_address mask in
+          let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
+          ppu_address := Uint16.logor to_set with_hole
+        )
         (* TODO *)
       )
       (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
@@ -445,6 +453,7 @@ module Rendering = struct
     else if !scanline <= 260 then ()
     (* Pre-rendering scanline *)
     else (
+      (* TODO tile fetching for next frame *)
       (*  If rendering is enabled, at the end of vblank, shortly after
        *  the horizontal bits are copied from t to v at dot 257, the PPU
        *  will repeatedly copy the vertical bits from t to v from dots
@@ -471,15 +480,6 @@ module Rendering = struct
           cycle := 0
         )
       )
-    ) ;
-    (* If rendering is enabled, the PPU copies all bits related to
-     * horizontal position from t to v *)
-    (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
-    if !cycle = 257 && !show_background then (
-      let mask = 0b000010000011111U in
-      let to_set = Uint16.logand !temp_vram_address mask in
-      let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
-      ppu_address := Uint16.logor to_set with_hole
     ) ;
     (* Next cycle *)
     incr cycle;
