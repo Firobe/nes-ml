@@ -17,3 +17,5 @@ Hard-coded controls :
 - Arrows : arrows
 - Start : return
 - Select : backspace
+- Home: open debugging windows
+- End: close debugging windows

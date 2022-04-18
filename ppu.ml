@@ -505,20 +505,22 @@ let exit () =
   Display.exit ()
 
 module Debug = struct
-
   type t = {
     names : Display.t;
-    attributes : Display.t
+    attributes : Display.t;
+    patterns : Display.t;
   }
 
   let init () = {
-    names = Display.create ~width:64 ~height:60 ~scale:8 "Nametables";
-    attributes = Display.create ~width:32 ~height:32 ~scale:16 "Attributes"
+    names = Display.create ~width:64 ~height:60 ~scale:8 "Name tables";
+    attributes = Display.create ~width:32 ~height:32 ~scale:16 "Attribute tables";
+    patterns = Display.create ~width:256 ~height:128 ~scale:4 "Pattern tables"
   }
 
   let delete t =
     Display.delete t.names;
-    Display.delete t.attributes
+    Display.delete t.attributes;
+    Display.delete t.patterns
 
   let cooldown = 1000
   let counter = ref 0
@@ -564,14 +566,41 @@ module Debug = struct
     set_attr 0x2BC0 0 16;
     set_attr 0x2FC0 16 16
 
+  let render_patterns disp =
+    let set_pattern addr x_orig y_orig =
+      for tile_y = 0 to 15 do
+        for tile_x = 0 to 15 do
+          let addr = addr + (tile_y * 16 + tile_x) * 16 in
+          for y = 0 to 7 do
+            for x = 0 to 7 do
+              let low = memory.(addr + y) in
+              let high = memory.(addr + y + 8) in
+              let shift = 7 - x in
+              let open Uint8 in
+              let low = logand (shift_right_logical low shift) 0x1u in
+              let high = logand (shift_right_logical high shift) 0x1u in
+              let color = logor low (high * 2u) * 8u in
+              let open Stdlib in
+              Display.set_pixel disp
+                ~x:(tile_x * 8 + x + x_orig) ~y:(tile_y * 8 + y + y_orig) ~color
+            done
+          done
+        done
+      done
+    in
+    set_pattern 0x0000 0 0;
+    set_pattern 0x1000 128 0
+
   let render = function
     | None -> ()
-    | Some {names; attributes} ->
+    | Some {names; attributes; patterns} ->
       if !counter = 0 then (
         render_nametables names;
         render_attributes attributes;
+        render_patterns patterns;
         Display.render names;
         Display.render attributes;
+        Display.render patterns;
         counter := cooldown
       );
       decr counter;
