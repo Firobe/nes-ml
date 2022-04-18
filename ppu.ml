@@ -11,6 +11,16 @@ open Stdint
  * - Some more details on rendering : https://fceux.com/web/help/PPU.html
  *)
 
+let palette = 
+    [0x7C7C7C; 0x0000FC; 0x0000BC; 0x4428BC; 0x940084; 0xA80020; 0xA81000; 0x881400;
+     0x503000; 0x007800; 0x006800; 0x005800; 0x004058; 0x000000; 0x000000; 0x000000;
+     0xBCBCBC; 0x0078F8; 0x0058F8; 0x6844FC; 0xD800CC; 0xE40058; 0xF83800; 0xE45C10;
+     0xAC7C00; 0x00B800; 0x00A800; 0x00A844; 0x008888; 0x000000; 0x000000; 0x000000;
+     0xF8F8F8; 0x3CBCFC; 0x6888FC; 0x9878F8; 0xF878F8; 0xF85898; 0xF87858; 0xFCA044;
+     0xF8B800; 0xB8F818; 0x58D854; 0x58F898; 0x00E8D8; 0x787878; 0x000000; 0x000000;
+     0xFCFCFC; 0xA4E4FC; 0xB8B8F8; 0xD8B8F8; 0xF8B8F8; 0xF8A4C0; 0xF0D0B0; 0xFCE0A8;
+     0xF8D878; 0xD8F878; 0xB8F8B8; 0xB8F8D8; 0x00FCFC; 0xF8D8F8; 0x000000; 0x000000]
+
 (* Main memory *)
 let memory = Array.make 0x4000 0u
 let oam = Array.make 0x100 0u
@@ -171,15 +181,6 @@ let dma read cpu_begin =
       aux (Uint16.succ cpu_addr) (Uint8.succ oam_addr) (length - 1)
     )
   in aux cpu_begin !oam_address 0x100
-
-let dump_memory () =
-  let file = open_out_bin "memdump_vram" in
-  let store = Bytes.create 0x10000 in
-  for i = 0 to (Array.length memory) - 1 do
-    Bytes.set store i @@ char_of_int (Uint8.to_int memory.(i))
-  done ;
-  output file store 0 (Bytes.length store) ;
-  close_out file
 
 [@@@warning "-32"]
 
@@ -496,12 +497,13 @@ end
 
 let init ic mm =
   interrupt_cpu := Some ic;
-  mirroring_mode := mm
+  mirroring_mode := mm;
+  Display.create ~width:256 ~height:240 ~scale:4 ~palette "NES"
 
 let next_cycle = Rendering.next_cycle
 
-let exit () =
-  dump_memory ();
+let exit t =
+  Display.delete t;
   Display.exit ()
 
 module Debug = struct
@@ -511,10 +513,14 @@ module Debug = struct
     patterns : Display.t;
   }
 
+  let pal_4 = [0x000000; 0xFF0000; 0x00FF00; 0x0000FF]
+
   let init () = {
-    names = Display.create ~width:64 ~height:60 ~scale:8 "Name tables";
-    attributes = Display.create ~width:32 ~height:32 ~scale:16 "Attribute tables";
-    patterns = Display.create ~width:256 ~height:128 ~scale:4 "Pattern tables"
+    names = Display.create ~width:64 ~height:62 ~scale:8 ~palette "Name tables + palettes";
+    attributes = Display.create ~width:32 ~height:32
+        ~scale:16 ~palette:pal_4 "Attribute tables";
+    patterns = Display.create ~width:256 ~height:128
+        ~scale:4 ~palette:pal_4 "Pattern tables"
   }
 
   let delete t =
@@ -538,7 +544,15 @@ module Debug = struct
     set_nametable 0x2000 0 0;
     set_nametable 0x2400 32 0;
     set_nametable 0x2800 0 30;
-    set_nametable 0x2C00 32 30
+    set_nametable 0x2C00 32 30;
+    for x = 0 to 63 do
+      Display.set_pixel disp ~x ~y:60 ~color:(Uint8.of_int x)
+    done;
+    for x = 0 to 31 do
+      let color = memory.(0x3F00 + x) in
+      Display.set_pixel disp ~x:(x * 2) ~y:61 ~color;
+      Display.set_pixel disp ~x:(x * 2 + 1) ~y:61 ~color
+    done
 
   let render_attributes disp =
     let set_attr addr x_orig y_orig =
@@ -549,10 +563,10 @@ module Debug = struct
           let x' = x * 2 + x_orig in
           let y' = y * 2 + y_orig in
           let open Uint8 in
-          let top_left = logand 0x3u v * 4u in
-          let top_right = logand (shift_right_logical v 2) 0x3u * 4u in
-          let bot_left = logand (shift_right_logical v 4) 0x3u * 4u in
-          let bot_right = logand (shift_right_logical v 6) 0x3u * 4u in
+          let top_left = logand 0x3u v in
+          let top_right = logand (shift_right_logical v 2) 0x3u in
+          let bot_left = logand (shift_right_logical v 4) 0x3u in
+          let bot_right = logand (shift_right_logical v 6) 0x3u in
           let open Stdlib in
           Display.set_pixel disp ~x:x' ~y:y' ~color:top_left;
           Display.set_pixel disp ~x:(x'+1) ~y:y' ~color:top_right;
@@ -579,7 +593,7 @@ module Debug = struct
               let open Uint8 in
               let low = logand (shift_right_logical low shift) 0x1u in
               let high = logand (shift_right_logical high shift) 0x1u in
-              let color = logor low (high * 2u) * 8u in
+              let color = logor low (high * 2u) in
               let open Stdlib in
               Display.set_pixel disp
                 ~x:(tile_x * 8 + x + x_orig) ~y:(tile_y * 8 + y + y_orig) ~color

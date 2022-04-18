@@ -46,11 +46,11 @@ let main =
     (* Create the CPU from the Mapper and ROM *)
     let module NesCpu = C6502.MakeCPU ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
+    let main = Ppu.init NesCpu.interrupt rom.config.mirroring in
     let disps = {
-      main = Display.create_main ();
-      debug = ref None
+      debug = ref None;
+      main
     } in
-    Ppu.init NesCpu.interrupt rom.config.mirroring;
     NesCpu.Register.set `S 0xFDu ;
     NesCpu.Register.set `P 0x34u ;
     NesCpu.PC.init () ;
@@ -65,6 +65,6 @@ let main =
           C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
     end ;
     (* Apu.exit (); *)
-    Ppu.exit ()
+    Ppu.exit main
   )
   else Printf.printf "No ROM provided\n"
