@@ -192,9 +192,9 @@ module Rendering = struct
   let shift16_1, shift16_2 = ref 0U, ref 0U (* low, high *)
   let shift16_latch_low = ref 0u
   let shift16_latch_high = ref 0u
-  (* For storing palette attributes *)
-  let shift8_1, shift8_2 = ref 0u, ref 0u (* low and high AT bits *)
-  let shift8_at_latch, shift8_nt_latch = ref 0u, ref 0u
+  (* For storing palette attributes, not shifting *)
+  let at = ref 0u
+  let at_latch, nt_latch = ref 0u, ref 0u
 
   (* Internal rendering registers : SPRITES
    * Holds 8 sprites and their pattern table
@@ -324,6 +324,12 @@ module Rendering = struct
   let shift1_8 r = r := Uint8.shift_right_logical !r 1
   let shift1_16 r = r := Uint16.shift_right_logical !r 1
 
+  (* Remember:
+   * - name table: associate a kind of pattern to a tile
+   * - attribute table (depends on chosen name table): associate a palette to a tile
+   * - pattern table: defines different patterns
+   *)
+
   let next_cycle () =
     (* TODO increment vert address at cycle 256 *)
     (* Process *)
@@ -342,15 +348,17 @@ module Rendering = struct
           (*Printf.printf "%x\n%!" (Uint8.to_int !shift16_latch_high);*)
           shift16_1 := mk_addr ~hi:!shift16_latch_low ~lo:(get_lo !shift16_1) ;
           shift16_2 := mk_addr ~hi:!shift16_latch_high ~lo:(get_lo !shift16_2) ;
+          at := Uint8.(logand !at_latch 0x3u)
         ) ;
         (* Actual memory fetching *)
         (* Only 12 first bits of address should be used *)
         match local_step with
         | 1 ->
           (* load NT byte to shift8_nt_latch *)
-          let addr = Uint16.logand !ppu_address 0b0000111111111111U in
-          let addr = Uint16.logor addr 0x2000U in
-          shift8_nt_latch := memory.(Uint16.to_int addr); (* tileIndex *)
+          let open Uint16 in
+          let v = !ppu_address in
+          let tile_address = logor 0x2000U (logand v 0xFFFU) in
+          nt_latch := memory.(Uint16.to_int tile_address)
         | 3 ->
           (* load AT byte to shift8_at_latch
         The low 12 bits of the attribute address are composed in the following way:
@@ -360,13 +368,12 @@ module Rendering = struct
          || ++++---------- attribute offset (960 bytes)
          ++--------------- nametable select *)
           let open Uint16 in
-          let addr = logand !ppu_address 0x0C00U in
-          let addr = logor addr 0x23C0U in
-          let addr = logor addr (logand 0x38U
-                                   (shift_right_logical !ppu_address 4)) in
-          let addr = logor addr (logand 0x07U
-                                   (shift_right_logical !ppu_address 2)) in
-          shift8_at_latch := memory.(to_int addr); (* attribute *)
+          let v = !ppu_address in
+          let attribute_base =0x23C0U + (logand v 0x0C00U) in
+          let coarse_y = logand 0x38U (shift_right_logical v 4) in
+          let coarse_x = logand 0x07U (shift_right_logical v 2) in
+          let attribute_address = attribute_base + coarse_x + coarse_y in
+          at_latch := memory.(to_int attribute_address) 
         | 5 -> (* load low BG tile byte to shift16_latch_low (pattern table)
         PPU addresses within the pattern tables can be decoded as follows:
         0HRRRR CCCCPTTT
@@ -377,8 +384,9 @@ module Rendering = struct
         |+-------------- H: Half of sprite table (0: "left"; 1: "right")
         +--------------- 0: Pattern table is at $0000-$1FFF *)
           let open Uint16 in
-          let finey = shift_right_logical (logand !ppu_address 0x7000U) 12 in
-          let tile_offset = (of_uint8 !shift8_nt_latch * 16U)  in
+          let v = !ppu_address in
+          let finey = shift_right_logical (logand v 0x7000U) 12 in
+          let tile_offset = (of_uint8 !nt_latch * 16U) in
           let addr = !background_pattern_address + tile_offset + finey in
           shift16_latch_low := memory.(to_int addr);
         | 7 ->
@@ -386,34 +394,30 @@ module Rendering = struct
            * same as above with additional bit *)
           let open Uint16 in
           let finey = shift_right_logical (logand !ppu_address 0x7000U) 12 in
-          let tile_offset = (of_uint8 !shift8_nt_latch * 16U)  in
+          let tile_offset = (of_uint8 !nt_latch * 16U)  in
           let addr = !background_pattern_address + tile_offset + finey + 8U in
           shift16_latch_high := memory.(to_int addr);
           (* inc hori *) (* TODO correctly *)
           ppu_address := !ppu_address + 1U
         | _ -> ()
           ;
-        (* TODO BG pixel rendering *)
+          (* Pixel rendering *)
         let open Uint16 in
         let scroll = Uint8.to_int !fine_x_scroll in
         let patl = logand (shift_right !shift16_1 scroll) 0x1U in
         let path = logand (shift_right !shift16_2 scroll) 0x1U in
         let pat = logor (shift_left path 1) patl |> Uint16.to_uint8 in
         let open Uint8 in
-        let pall = logand (shift_right !shift8_1 scroll) 0x1u in
-        let palh = logand (shift_right !shift8_2 scroll) 0x1u in
-        let pal = logor (shift_left palh 1) pall in
+        let pal = !at in
         let x = of_int !cycle in
         let y = of_int !scanline in
-        (*Printf.printf "%d %d\n%!" (Uint16.to_int pat) (Uint8.to_int pal);*)
+        (*Printf.printf "%d %d\n%!" (Uint8.to_int pat) (Uint8.to_int pal);*)
         (*Printf.printf "x %d y %d (%d, %d)\n" !cycle !scanline (to_int pal)
          * (to_int pat);*)
         draw_pixel x y 0x3F00U ~pal ~pat;
         (* Shift registers *)
         shift1_16 shift16_1 ;
-        shift1_16 shift16_2 ;
-        shift1_8 shift8_1 ;
-        shift1_8 shift8_2 
+        shift1_16 shift16_2
       )
       (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
       else if !cycle <= 320 then (
