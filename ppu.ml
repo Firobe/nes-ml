@@ -296,8 +296,8 @@ module Rendering = struct
           | Some _ -> sprite_0_hit := !sprite_0_hit || true
         end
 
-  let shift1_8 r = r := Uint8.shift_right_logical !r 1
-  let shift1_16 r = r := Uint16.shift_right_logical !r 1
+  let shift1_8 r = r := Uint8.shift_left !r 1
+  let shift1_16 r = r := Uint16.shift_left !r 1
 
   (* Remember:
    * - name table: associate a kind of pattern to a tile
@@ -350,8 +350,8 @@ module Rendering = struct
       | 1 ->
         if !cycle <> 0 then (
           (* Reload shifters *)
-          shift16_1 := mk_addr ~hi:!shift16_latch_low ~lo:(get_lo !shift16_1) ;
-          shift16_2 := mk_addr ~hi:!shift16_latch_high ~lo:(get_lo !shift16_2) ;
+          shift16_1 := mk_addr ~lo:!shift16_latch_low ~hi:(get_hi !shift16_1) ;
+          shift16_2 := mk_addr ~lo:!shift16_latch_high ~hi:(get_hi !shift16_2) ;
           at := Uint8.(logand !at_latch 0x3u);
         );
         (* load NT byte to shift8_nt_latch *)
@@ -388,6 +388,7 @@ module Rendering = struct
         let finey = shift_right_logical (logand v 0x7000U) 12 in
         let tile_offset = (of_uint8 !nt_latch * 16U) in
         let addr = !background_pattern_address + tile_offset + finey in
+        (* reverse byte, for some reason *)
         shift16_latch_low := memory.(to_int addr);
       | 7 ->
         (* load high BG tile byte to shift16_latch_high
@@ -401,9 +402,8 @@ module Rendering = struct
     end
 
   let render_pixel disp =
+    let scroll = 15 - Uint8.to_int !fine_x_scroll in
     let open Uint16 in
-    (* TODO check this is correct *)
-    let scroll = Uint8.to_int !fine_x_scroll in
     let patl = logand (shift_right !shift16_1 scroll) 0x1U in
     let path = logand (shift_right !shift16_2 scroll) 0x1U in
     let pat = logor (shift_left path 1) patl |> Uint16.to_uint8 in
@@ -429,7 +429,7 @@ module Rendering = struct
        * horizontal position from t to v *)
       (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
       if !cycle = 257 && !show_background then (
-        let mask = 0b000010000011111U in
+        let mask = 0x41FU in
         let to_set = Uint16.logand !temp_vram_address mask in
         let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
         ppu_address := Uint16.logor to_set with_hole
@@ -470,19 +470,20 @@ module Rendering = struct
        *  will repeatedly copy the vertical bits from t to v from dots
        *  280 to 304, completing the full initialization of v from t: *)
       if !cycle >= 280 && !cycle <= 304 && !show_background then (
-          let mask = u16 0b111101111100000 in
+          let mask = 0x7BE0U in
           let to_set = Uint16.logand !temp_vram_address mask in
           let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
           ppu_address := Uint16.logor to_set with_hole
       )
       (* Final dot : change everything *)
       else if !cycle = 340 then (
-        sprite_0_hit := false ; (* this should be at cycle 1 *)
+        sprite_0_hit := false ; 
         incr frame ;
         (*render_sprites true 0 ;*)
         Display.render disp;
         Display.clear disp memory.(0x3F00);
         (*render_sprites false 0 ;*)
+        (* this should be at cycle 1 *)
         vblank_enabled := false ;
         (* Odd frame : jump to (0, 0) directly *)
         if (!frame mod 2) = 1 && !show_background then (
