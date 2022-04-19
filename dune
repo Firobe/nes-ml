@@ -1,5 +1,0 @@
-(executable
-	(name nes)
-    (preprocess (pps stdint-literals))
-	(libraries 6502-ml tsdl extlib graphics stdint)
-)
