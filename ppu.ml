@@ -194,7 +194,8 @@ module Rendering = struct
   let next_bg_low = ref 0u
   let next_bg_high = ref 0u
   (* For storing palette attributes, not shifting *)
-  let at, at_next = ref 0u, ref 0u
+  let at_low, at_high = ref 0u, ref 0u
+  let at_low_next, at_high_next = ref false, ref false
   let nt_next = ref 0u
 
   (* Internal rendering registers : SPRITES
@@ -352,7 +353,6 @@ module Rendering = struct
           (* Reload shifters *)
           bg_low := mk_addr ~lo:!next_bg_low ~hi:(get_hi !bg_low) ;
           bg_high := mk_addr ~lo:!next_bg_high ~hi:(get_hi !bg_high) ;
-          at := Uint8.(logand !at_next 0x3u);
         );
         (* load NT byte to shift8_nt_next *)
         let open Uint16 in
@@ -374,7 +374,9 @@ module Rendering = struct
         let coarse_y = logand 0x38U (shift_right_logical v 4) in
         let coarse_x = logand 0x07U (shift_right_logical v 2) in
         let attribute_address = attribute_base + coarse_x + coarse_y in
-        at_next := memory.(to_int attribute_address) 
+        let at_next = memory.(to_int attribute_address) in
+        at_low_next := Uint8.(logand 0x1u at_next <> 0u);
+        at_high_next := Uint8.(logand 0x2u at_next <> 0u);
       | 5 -> (* load low BG tile byte to next_bg_low (pattern table)
                 PPU addresses within the pattern tables can be decoded as follows:
                 0HRRRR CCCCPTTT
@@ -403,13 +405,16 @@ module Rendering = struct
     end
 
   let render_pixel disp =
-    let scroll = 15 - Uint8.to_int !fine_x_scroll in
+    let scroll1 = 15 - Uint8.to_int !fine_x_scroll in
+    let scroll2 = 7 - Uint8.to_int !fine_x_scroll in
     let open Uint16 in
-    let patl = logand (shift_right !bg_low scroll) 0x1U in
-    let path = logand (shift_right !bg_high scroll) 0x1U in
+    let patl = logand (shift_right !bg_low scroll1) 0x1U in
+    let path = logand (shift_right !bg_high scroll1) 0x1U in
     let pat = logor (shift_left path 1) patl |> Uint16.to_uint8 in
     let open Uint8 in
-    let pal = !at in
+    let pall = logand (shift_right !at_low scroll2) 0x1u in
+    let palh = logand (shift_right !at_high scroll2) 0x1u in
+    let pal = logor (shift_left palh 1) pall in
     let x = of_int !cycle in
     let y = of_int !scanline in
     draw_pixel disp x y 0x3F00U ~pal ~pat
@@ -422,7 +427,11 @@ module Rendering = struct
       if render then (render_pixel disp);
       (* Shift registers *)
       shift1_16 bg_low ;
-      shift1_16 bg_high
+      shift1_16 bg_high ;
+      shift1_8 at_low ;
+      shift1_8 at_high ;
+      at_low := if !at_low_next then Uint8.succ !at_low else !at_low;
+      at_high := if !at_high_next then Uint8.succ !at_high else !at_high
     )
     (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
     else if !cycle <= 320 then (
