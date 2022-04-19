@@ -473,6 +473,10 @@ module Rendering = struct
     else if !scanline <= 260 then ()
     (* Pre-rendering scanline *)
     else (
+      (* Clear VBLANK *)
+      if !cycle = 1 then (
+        vblank_enabled := false
+      );
       (* Fetch data for next frame *)
       data_fetching disp false;
       (*  If rendering is enabled, at the end of vblank, shortly after
@@ -494,7 +498,6 @@ module Rendering = struct
         Display.clear disp memory.(0x3F00);
         (*render_sprites false 0 ;*)
         (* this should be at cycle 1 *)
-        vblank_enabled := false ;
         (* Odd frame : jump to (0, 0) directly *)
         if (!frame mod 2) = 1 && !show_background then (
           scanline := 0;
