@@ -162,7 +162,7 @@ let get_register reg =
   | 7 -> (* PPU data *)
     (* Palette mirroring *)
     let addr = palette_mirror_filter !ppu_address in
-    ppu_address := Uint16.(!ppu_address + !ppudata_increment);
+    ppu_address := Uint16.(logand (!ppu_address + !ppudata_increment) 0x3FFFU);
     (* Correct buffer *)
     if addr >= 0x3F00U then begin
       vram_buffer := Uint16.(memory.(to_int @@ logand addr 0x2F1FU));
