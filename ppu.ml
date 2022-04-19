@@ -190,12 +190,12 @@ module Rendering = struct
   let cycle = ref 0
 
   (* For storing pattern table data for two tiles *)
-  let shift16_1, shift16_2 = ref 0U, ref 0U (* low, high *)
-  let shift16_latch_low = ref 0u
-  let shift16_latch_high = ref 0u
+  let bg_low, bg_high = ref 0U, ref 0U (* low, high *)
+  let next_bg_low = ref 0u
+  let next_bg_high = ref 0u
   (* For storing palette attributes, not shifting *)
-  let at = ref 0u
-  let at_latch, nt_latch = ref 0u, ref 0u
+  let at, at_next = ref 0u, ref 0u
+  let nt_next = ref 0u
 
   (* Internal rendering registers : SPRITES
    * Holds 8 sprites and their pattern table
@@ -350,17 +350,18 @@ module Rendering = struct
       | 1 ->
         if !cycle <> 0 then (
           (* Reload shifters *)
-          shift16_1 := mk_addr ~lo:!shift16_latch_low ~hi:(get_hi !shift16_1) ;
-          shift16_2 := mk_addr ~lo:!shift16_latch_high ~hi:(get_hi !shift16_2) ;
-          at := Uint8.(logand !at_latch 0x3u);
+          bg_low := mk_addr ~lo:!next_bg_low ~hi:(get_hi !bg_low) ;
+          bg_high := mk_addr ~lo:!next_bg_high ~hi:(get_hi !bg_high) ;
+          at := Uint8.(logand !at_next 0x3u);
         );
-        (* load NT byte to shift8_nt_latch *)
+        (* load NT byte to shift8_nt_next *)
         let open Uint16 in
         let v = !ppu_address in
         let tile_address = logor 0x2000U (logand v 0xFFFU) in
-        nt_latch := memory.(Uint16.to_int tile_address)
+        (* TODO mirroring *)
+        nt_next := memory.(Uint16.to_int tile_address)
       | 3 ->
-        (* load AT byte to shift8_at_latch
+        (* load AT byte to shift8_at_next
            The low 12 bits of the attribute address are composed in the following way:
            NN 1111 YYY XXX
            || |||| ||| +++-- high 3 bits of coarse X (x/4)
@@ -373,8 +374,8 @@ module Rendering = struct
         let coarse_y = logand 0x38U (shift_right_logical v 4) in
         let coarse_x = logand 0x07U (shift_right_logical v 2) in
         let attribute_address = attribute_base + coarse_x + coarse_y in
-        at_latch := memory.(to_int attribute_address) 
-      | 5 -> (* load low BG tile byte to shift16_latch_low (pattern table)
+        at_next := memory.(to_int attribute_address) 
+      | 5 -> (* load low BG tile byte to next_bg_low (pattern table)
                 PPU addresses within the pattern tables can be decoded as follows:
                 0HRRRR CCCCPTTT
                 |||||| |||||+++- T: Fine Y offset, the row number within a tile
@@ -386,26 +387,26 @@ module Rendering = struct
         let open Uint16 in
         let v = !ppu_address in
         let finey = shift_right_logical (logand v 0x7000U) 12 in
-        let tile_offset = (of_uint8 !nt_latch * 16U) in
+        let tile_offset = (of_uint8 !nt_next * 16U) in
         let addr = !background_pattern_address + tile_offset + finey in
         (* reverse byte, for some reason *)
-        shift16_latch_low := memory.(to_int addr);
+        next_bg_low := memory.(to_int addr);
       | 7 ->
-        (* load high BG tile byte to shift16_latch_high
+        (* load high BG tile byte to next_bg_high
          * same as above with additional bit *)
         let open Uint16 in
         let finey = shift_right_logical (logand !ppu_address 0x7000U) 12 in
-        let tile_offset = (of_uint8 !nt_latch * 16U)  in
+        let tile_offset = (of_uint8 !nt_next * 16U)  in
         let addr = !background_pattern_address + tile_offset + finey + 8U in
-        shift16_latch_high := memory.(to_int addr);
+        next_bg_high := memory.(to_int addr);
       | _ -> ()
     end
 
   let render_pixel disp =
     let scroll = 15 - Uint8.to_int !fine_x_scroll in
     let open Uint16 in
-    let patl = logand (shift_right !shift16_1 scroll) 0x1U in
-    let path = logand (shift_right !shift16_2 scroll) 0x1U in
+    let patl = logand (shift_right !bg_low scroll) 0x1U in
+    let path = logand (shift_right !bg_high scroll) 0x1U in
     let pat = logor (shift_left path 1) patl |> Uint16.to_uint8 in
     let open Uint8 in
     let pal = !at in
@@ -420,8 +421,8 @@ module Rendering = struct
       (* Pixel rendering *)
       if render then (render_pixel disp);
       (* Shift registers *)
-      shift1_16 shift16_1 ;
-      shift1_16 shift16_2
+      shift1_16 bg_low ;
+      shift1_16 bg_high
     )
     (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
     else if !cycle <= 320 then (
@@ -439,8 +440,8 @@ module Rendering = struct
     (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
     else if !cycle <= 336 && !show_background then (
       fetch_next_data () ;
-      shift1_16 shift16_1 ;
-      shift1_16 shift16_2
+      shift1_16 bg_low ;
+      shift1_16 bg_high
     )
     (* Cycles 337-340 : USELESS *)
     else ()
