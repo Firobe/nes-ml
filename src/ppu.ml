@@ -299,6 +299,10 @@ module Rendering = struct
 
   let shift1_8 r = r := Uint8.shift_left !r 1
   let shift1_16 r = r := Uint16.shift_left !r 1
+  let copy_bits_16 ~src ~dst mask =
+    let to_set = Uint16.logand src mask in
+    let with_hole = Uint16.logand dst (Uint16.lognot mask) in
+    Uint16.logor to_set with_hole
 
   (* Remember:
    * - name table: associate a kind of pattern to a tile
@@ -439,10 +443,8 @@ module Rendering = struct
        * horizontal position from t to v *)
       (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
       if !cycle = 257 && !show_background then (
-        let mask = 0x41FU in
-        let to_set = Uint16.logand !temp_vram_address mask in
-        let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
-        ppu_address := Uint16.logor to_set with_hole
+        ppu_address :=
+          copy_bits_16 ~src:!temp_vram_address ~dst:!ppu_address 0x41FU
       )
       (* TODO sprites *)
     )
@@ -459,6 +461,14 @@ module Rendering = struct
     (* Process *)
     (* Visible scanlines : 0 - 239 *)
     if !scanline <= 239 then (
+      (*
+      if !scanline = 0 && !cycle = 1 then (
+        ppu_address := Uint16.(logand !ppu_address 0b000111111111111U);
+        Printf.printf "Scroll Y: %d%!\n"
+          Uint16.(logand 0b111U (shift_right_logical !ppu_address 12)
+                  |> to_int)
+      );
+         *)
       data_fetching disp true
     )
     (* Post-render scanline : 240  (IDLE) *)
@@ -484,10 +494,8 @@ module Rendering = struct
        *  will repeatedly copy the vertical bits from t to v from dots
        *  280 to 304, completing the full initialization of v from t: *)
       if !cycle >= 280 && !cycle <= 304 && !show_background then (
-          let mask = 0x7BE0U in
-          let to_set = Uint16.logand !temp_vram_address mask in
-          let with_hole = Uint16.logand !ppu_address (Uint16.lognot mask) in
-          ppu_address := Uint16.logor to_set with_hole
+        ppu_address :=
+          copy_bits_16 ~src:!temp_vram_address ~dst:!ppu_address 0x7BE0U
       )
       (* Final dot : change everything *)
       else if !cycle = 340 then (
