@@ -72,12 +72,14 @@ let int_of_bool b = if b then 1 else 0
 let nth_bit b n =
   Uint8.((logand b (shift_left one n)) <> zero)
 
-let palette_mirror_filter addr =
-  if addr >= 0x3F00U then (
-    let tmp = Uint16.logand !ppu_address 0x3F1FU in
-    if tmp = 0x3F10U then 0x3F00U else tmp
-  )
-  else addr
+(* PPU memory address with redirections *)
+let address_indirection v =
+  let open Uint16 in
+  if v <= 0x2FFFU then v
+  else if v <= 0x3EFFU then logand v 0x2FFFU
+  else logand v 0x3F1FU
+let set_ppu v x = memory.(address_indirection v |> Uint16.to_int) <- x
+let get_ppu v = memory.(address_indirection v |> Uint16.to_int)
 
 let increment_ppu_address () = ppu_address := Uint16.(!ppu_address + !ppudata_increment)
 
@@ -90,7 +92,6 @@ let set_register register (v : uint8) =
     let to_set = Uint16.shift_left (u16of8 @@ Uint8.logand v 3u) 10 in
     let with_hole = Uint16.logand !temp_vram_address 0b111001111111111U in
     temp_vram_address := Uint16.logor to_set with_hole ;
-
     (* TODO going accross, going down ? *)
     ppudata_increment := if nth_bit v 2 then 32U else 1U;
     sprite_pattern_address := if (nth_bit v 3) then 0x1000U else 0U;
@@ -141,9 +142,7 @@ let set_register register (v : uint8) =
       ppu_address := !temp_vram_address
     )
   | 7 -> (* PPU data *)
-    (* Palette mirroring *)
-    let addr = palette_mirror_filter !ppu_address in
-    memory.(Uint16.to_int addr) <- v;
+    set_ppu !ppu_address v;
     increment_ppu_address ()
   | _ -> Printf.printf "Warning: trying to set PPU register %d\n" register
 
@@ -161,15 +160,17 @@ let get_register reg =
     oam.(Uint8.to_int !oam_address)
   | 7 -> (* PPU data *)
     (* Palette mirroring *)
-    let addr = palette_mirror_filter !ppu_address in
+    let addr = address_indirection !ppu_address in
     ppu_address := Uint16.(logand (!ppu_address + !ppudata_increment) 0x3FFFU);
     (* Correct buffer *)
     if addr >= 0x3F00U then begin
-      vram_buffer := Uint16.(memory.(to_int @@ logand addr 0x2F1FU));
-      memory.(Uint16.to_int addr)
+      (* TODO what is this ? why are we doing this ? *)
+      vram_buffer := get_ppu Uint16.(logand addr 0x2F1FU);
+      get_ppu addr
     end else begin
       let old = !vram_buffer in
-      vram_buffer := memory.(Uint16.to_int addr); old
+      vram_buffer := get_ppu addr;
+      old
     end
   | _ -> !bus_latch
   in bus_latch := res ; res
@@ -235,7 +236,7 @@ module Rendering = struct
    * corresponding color *)
   let palette_ind_to_color start nb ind =
     let address = Uint16.(start + (u16of8 nb) * 4U + (u16of8 ind)) in
-    memory.(Uint16.to_int address)
+    get_ppu address
 
   let sprite_warned = ref false
 
@@ -362,8 +363,7 @@ module Rendering = struct
         let open Uint16 in
         let v = !ppu_address in
         let tile_address = logor 0x2000U (logand v 0xFFFU) in
-        (* TODO mirroring *)
-        nt_next := memory.(Uint16.to_int tile_address)
+        nt_next := get_ppu tile_address
       | 3 ->
         (* load AT byte to shift8_at_next
            The low 12 bits of the attribute address are composed in the following way:
@@ -378,7 +378,7 @@ module Rendering = struct
         let coarse_y = logand 0x38U (shift_right_logical v 4) in
         let coarse_x = logand 0x07U (shift_right_logical v 2) in
         let attribute_address = attribute_base + coarse_x + coarse_y in
-        let at_next = memory.(to_int attribute_address) in
+        let at_next = get_ppu attribute_address in
         at_low_next := Uint8.(logand 0x1u at_next <> 0u);
         at_high_next := Uint8.(logand 0x2u at_next <> 0u);
       | 5 -> (* load low BG tile byte to next_bg_low (pattern table)
@@ -395,8 +395,7 @@ module Rendering = struct
         let finey = shift_right_logical (logand v 0x7000U) 12 in
         let tile_offset = (of_uint8 !nt_next * 16U) in
         let addr = !background_pattern_address + tile_offset + finey in
-        (* reverse byte, for some reason *)
-        next_bg_low := memory.(to_int addr);
+        next_bg_low := get_ppu addr
       | 7 ->
         (* load high BG tile byte to next_bg_high
          * same as above with additional bit *)
@@ -404,7 +403,7 @@ module Rendering = struct
         let finey = shift_right_logical (logand !ppu_address 0x7000U) 12 in
         let tile_offset = (of_uint8 !nt_next * 16U)  in
         let addr = !background_pattern_address + tile_offset + finey + 8U in
-        next_bg_high := memory.(to_int addr);
+        next_bg_high := get_ppu addr
       | _ -> ()
     end
 
