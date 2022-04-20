@@ -122,10 +122,9 @@ let set_register register (v : uint8) =
       fine_x_scroll := Uint8.logand v 0b00000111u
     else
       (* t: FGH..AB CDE..... <- d: ABCDEFGH *)
-      let fgh = Uint16.shift_left (u16of8 (Uint8.logand v 3u)) 13 in
-      Printf.printf "scroll: %d\n" Uint8.(logand v 3u |> to_int);
-      let abcde = Uint16.shift_left (u16of8 (Uint8.logand v 0b11111000u)) 2 in
-      let with_hole = Uint16.logand !temp_vram_address 0b000110000011111U in
+      let fgh = Uint16.shift_left (u16of8 (Uint8.logand v 7u)) 12 in
+      let abcde = Uint16.shift_left (u16of8 (Uint8.logand v 0xF8u)) 2 in
+      let with_hole = Uint16.logand !temp_vram_address 0xC1FU in
       let with_fgh = Uint16.logor with_hole fgh in
       temp_vram_address := Uint16.logor with_fgh abcde
   | 6 -> (* PPU address *)
