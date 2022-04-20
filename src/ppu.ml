@@ -116,10 +116,10 @@ let set_register register (v : uint8) =
     if read_latch () then
       (* t: ....... ...ABCDE <- d: ABCDE... *)
       let to_set = Uint16.shift_right_logical (u16of8 v) 3 in
-      let with_hole = Uint16.logand !temp_vram_address 0b111111111100000U in
+      let with_hole = Uint16.logand !temp_vram_address 0xFFE0U in
       temp_vram_address := Uint16.logor to_set with_hole ;
       (* x:              FGH <- d: .....FGH *)
-      fine_x_scroll := Uint8.logand v 0b00000111u
+      fine_x_scroll := Uint8.logand v 7u
     else
       (* t: FGH..AB CDE..... <- d: ABCDEFGH *)
       let fgh = Uint16.shift_left (u16of8 (Uint8.logand v 7u)) 12 in
