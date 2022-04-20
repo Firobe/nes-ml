@@ -183,8 +183,6 @@ let dma read cpu_begin =
     )
   in aux cpu_begin !oam_address 0x100
 
-[@@@warning "-32"]
-
 module Rendering = struct
   let frame = ref 0
   let scanline = ref 261
@@ -202,21 +200,10 @@ module Rendering = struct
   (* Internal rendering registers : SPRITES
    * Holds 8 sprites and their pattern table
    * data, attributes and positions for the scanline *)
-  let sec_oam = Array.make 0x20 0u
-  let sprites_shifts = Array.make 16 0u
-  let sprite_attributes = Array.make 8 0u
-  let sprite_positions = Array.make 8 0u
-
-  let decode_chr (start : uint16) (tile_nb : uint8) (x : uint8) (y : uint8) =
-    let chr_base = Uint16.(start + (u16of8 tile_nb) * 0x10U) in
-    let x_mod = u16of8 @@ Uint8.logand x 7u in
-    let y_mod = u16of8 @@ Uint8.logand y 7u in
-    let low_byte = memory.(Uint16.(to_int @@ chr_base + y_mod)) in
-    let high_byte = memory.(Uint16.(to_int @@ chr_base + 8U + y_mod)) in
-    let mask = Uint8.shift_left 1u (7 - (Uint16.to_int x_mod)) in
-    let low_bit = int_of_bool Uint8.(logand low_byte mask != zero) in
-    let high_bit = int_of_bool Uint8.(logand high_byte mask != zero) in
-    (u8 @@ low_bit lor (high_bit lsl 1))
+  let _sec_oam = Array.make 0x20 0u
+  let _sprites_shifts = Array.make 16 0u
+  let _sprite_attributes = Array.make 8 0u
+  let _sprite_positions = Array.make 8 0u
 
   (*
   let get_address (x : uint16) (y : uint16) =
@@ -238,13 +225,12 @@ module Rendering = struct
     let address = Uint16.(start + (u16of8 nb) * 4U + (u16of8 ind)) in
     get_ppu address
 
-  let sprite_warned = ref false
-
   let draw_pixel disp x y pal_start ~pal:palette_nb ~pat:color_nb =
     if color_nb <> 0u then
       let color = palette_ind_to_color pal_start palette_nb color_nb in
       Display.set_pixel disp ~x:(Uint8.to_int x) ~y:(Uint8.to_int y) ~color
 
+  (*
   let render_sprite nb f =
     if !sprite_size && not !sprite_warned then (
       Printf.printf "Unsupported 8x16 sprites\n";
@@ -269,34 +255,7 @@ module Rendering = struct
           f x' y' 0x3F10U ~pal:palette ~pat:color_nb
         done
     done
-
-  let rec render_sprites disp after_back nb =
-    if nb != 256 then (
-      if (Uint8.logand oam.(nb + 2) 0x20u <> 0u) <> after_back then
-        render_sprite nb (draw_pixel disp)
-      ;
-      render_sprites disp after_back (nb + 4)
-    )
-
-  let get_sprite_zero_pixels () =
-    let pixels = ref [] in
-    let fill x y _ ~pal:_ ~pat:color =
-      if color <> 0u then pixels := (x, y) :: !pixels
-    in
-    (* TODO sprite 0 should be dependent on OAM addr *)
-    render_sprite 0 fill ; !pixels
-
-  let sprite_zero_check x y bg_color =
-    match bg_color with
-    | None -> ()
-    | Some _ ->
-      if !show_background && !show_sprites then
-        (* compute these only once per frame *)
-        let pixels = get_sprite_zero_pixels () in
-        begin match List.find_opt ((=) (x, y)) pixels with
-          | None -> ()
-          | Some _ -> sprite_0_hit := !sprite_0_hit || true
-        end
+     *)
 
   let shift1_8 r = r := Uint8.shift_left !r 1
   let shift1_16 r = r := Uint16.shift_left !r 1
