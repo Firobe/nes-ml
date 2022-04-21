@@ -329,13 +329,16 @@ module Rendering = struct
            || |||| +++------ high 3 bits of coarse Y (y/4)
            || ++++---------- attribute offset (960 bytes)
            ++--------------- nametable select *)
+        (* stolen from mesen *)
         let open Uint16 in
         let v = !ppu_address in
-        let attribute_base =0x23C0U + (logand v 0x0C00U) in
-        let coarse_y = shift_right_logical (logand v 0x380U) 4 in
-        let coarse_x = shift_right_logical (logand v 0x1CU) 2 in
-        let attribute_address = attribute_base + coarse_x + coarse_y in
-        let at_next = get_ppu attribute_address in
+        let addr = logor 0x23C0U (logand v 0x0C00U) in
+        let addr = logor addr (logand (shift_right_logical v 4) 0x38U) in
+        let addr = logor addr (logand (shift_right_logical v 2) 0x7U) in
+        let data = get_ppu addr |> of_uint8 in
+        let shift = logor (logand 0x04U (shift_right_logical v 4))
+            (logand v 0x02U) |> to_int in
+        let at_next = logand (shift_right_logical data shift) 0x3U |> to_uint8 in 
         at_low_next := Uint8.(logand 0x1u at_next <> 0u);
         at_high_next := Uint8.(logand 0x2u at_next <> 0u);
       | 5 -> (* load low BG tile byte to next_bg_low (pattern table)
