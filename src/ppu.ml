@@ -379,6 +379,14 @@ module Rendering = struct
     let y = of_int !scanline in
     draw_pixel disp x y 0x3F00U ~pal ~pat
 
+  let shift_registers () =
+    shift1_16 bg_low ;
+    shift1_16 bg_high ;
+    shift1_8 at_low ;
+    shift1_8 at_high ;
+    at_low := if !at_low_next then Uint8.succ !at_low else !at_low;
+    at_high := if !at_high_next then Uint8.succ !at_high else !at_high
+
   let data_fetching disp render =
     (* Cycle 0 : IDLE *)
     if !cycle = 0 then ()
@@ -387,13 +395,7 @@ module Rendering = struct
       fetch_next_data ();
       (* Pixel rendering *)
       if render then (render_pixel disp);
-      (* Shift registers *)
-      shift1_16 bg_low ;
-      shift1_16 bg_high ;
-      shift1_8 at_low ;
-      shift1_8 at_high ;
-      at_low := if !at_low_next then Uint8.succ !at_low else !at_low;
-      at_high := if !at_high_next then Uint8.succ !at_high else !at_high
+      shift_registers ()
     )
     (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
     else if !cycle <= 320 then (
@@ -409,8 +411,7 @@ module Rendering = struct
     (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
     else if !cycle <= 336 && !show_background then (
       fetch_next_data () ;
-      shift1_16 bg_low ;
-      shift1_16 bg_high
+      shift_registers ()
     )
     (* Cycles 337-340 : USELESS *)
     else ()
