@@ -219,15 +219,13 @@ module Rendering = struct
     base, (rem x (u16 32)), (rem y (u16 30))
      *)
 
-  (* Get a palette address, a palette number and a color number, give the
-   * corresponding color *)
-  let palette_ind_to_color start nb ind =
-    let address = Uint16.(start + (u16of8 nb) * 4U + (u16of8 ind)) in
-    get_ppu address
-
   let draw_pixel disp x y pal_start ~pal:palette_nb ~pat:color_nb =
     if color_nb <> 0u then
-      let color = palette_ind_to_color pal_start palette_nb color_nb in
+      (* Get a palette address, a palette number and a color number, give the
+       * corresponding color *)
+      let address =
+        Uint16.(pal_start + (u16of8 palette_nb) * 4U + (u16of8 color_nb)) in
+      let color = get_ppu address in
       Display.set_pixel disp ~x:(Uint8.to_int x) ~y:(Uint8.to_int y) ~color
 
   (*
@@ -306,10 +304,7 @@ module Rendering = struct
     (* Actual memory fetching *)
     (* Only 12 first bits of address should be used *)
     begin match local_step with
-      | 0 when !cycle = 0 ->
-        (*Printf.printf "addr %X scanline %d\n"
-          (Uint16.to_int !ppu_address) !scanline*) ()
-      | 0 when !cycle <> 0 ->
+      | 0 ->
         if !cycle = 256 then inc_vert ppu_address
         else inc_hori ppu_address
       | 1 ->
@@ -334,8 +329,8 @@ module Rendering = struct
         let open Uint16 in
         let v = !ppu_address in
         let attribute_base =0x23C0U + (logand v 0x0C00U) in
-        let coarse_y = logand 0x38U (shift_right_logical v 4) in
-        let coarse_x = logand 0x07U (shift_right_logical v 2) in
+        let coarse_y = shift_right_logical (logand v 0x380U) 4 in
+        let coarse_x = shift_right_logical (logand v 0x1CU) 2 in
         let attribute_address = attribute_base + coarse_x + coarse_y in
         let at_next = get_ppu attribute_address in
         at_low_next := Uint8.(logand 0x1u at_next <> 0u);
@@ -377,13 +372,15 @@ module Rendering = struct
     let pall = logand (shift_right !at_low scroll2) 0x1u in
     let palh = logand (shift_right !at_high scroll2) 0x1u in
     let pal = logor (shift_left palh 1) pall in
-    let x = of_int !cycle in
+    let x = of_int Stdlib.(!cycle - 1) in
     let y = of_int !scanline in
     draw_pixel disp x y 0x3F00U ~pal ~pat
 
   let data_fetching disp render =
-    (* Cycles 0 - 256 : BACKGROUND FETCHING *)
-    if !cycle <= 256 && !show_background then (
+    (* Cycle 0 : IDLE *)
+    if !cycle = 0 then ()
+    (* Cycles 1 - 256 : BACKGROUND FETCHING *)
+    else if !cycle <= 256 && !show_background then (
       fetch_next_data ();
       (* Pixel rendering *)
       if render then (render_pixel disp);
