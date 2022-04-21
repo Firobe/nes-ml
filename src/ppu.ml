@@ -398,7 +398,9 @@ module Rendering = struct
     else if !cycle <= 256 && !show_background then (
       fetch_next_data ();
       (* Pixel rendering *)
-      if render then (render_pixel disp);
+      if render && (!cycle > 8 || !show_background_leftmost) then (
+        render_pixel disp
+      );
       shift_registers ()
     )
     (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
