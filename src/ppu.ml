@@ -77,7 +77,10 @@ let address_indirection v =
   let open Uint16 in
   if v <= 0x2FFFU then v
   else if v <= 0x3EFFU then logand v 0x2FFFU
-  else logand v 0x3F1FU
+  else 
+    let v = logand v 0x3F1FU in
+    if logand v 0x7U = 0U then logand v (lognot 0x10U) else v
+
 let set_ppu v x = memory.(address_indirection v |> Uint16.to_int) <- x
 let get_ppu v = memory.(address_indirection v |> Uint16.to_int)
 
