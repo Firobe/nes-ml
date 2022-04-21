@@ -199,6 +199,7 @@ module Rendering = struct
   let at_low, at_high = ref 0u, ref 0u
   let at_low_next, at_high_next = ref false, ref false
   let nt_next = ref 0u
+  let at_next = ref 0u
 
   (* Internal rendering registers : SPRITES
    * Holds 8 sprites and their pattern table
@@ -308,13 +309,15 @@ module Rendering = struct
     (* Only 12 first bits of address should be used *)
     begin match local_step with
       | 0 ->
-        if !cycle = 256 then inc_vert ppu_address
-        else inc_hori ppu_address
+        inc_hori ppu_address;
+        if !cycle = 256 then (inc_vert ppu_address)
       | 1 ->
         if !cycle <> 0 then (
           (* Reload shifters *)
           bg_low := mk_addr ~lo:!next_bg_low ~hi:(get_hi !bg_low) ;
           bg_high := mk_addr ~lo:!next_bg_high ~hi:(get_hi !bg_high) ;
+          at_low_next := Uint8.(logand 0x1u !at_next <> 0u);
+          at_high_next := Uint8.(logand 0x2u !at_next <> 0u);
         );
         (* load NT byte to shift8_nt_next *)
         let open Uint16 in
@@ -338,9 +341,7 @@ module Rendering = struct
         let data = get_ppu addr |> of_uint8 in
         let shift = logor (logand 0x04U (shift_right_logical v 4))
             (logand v 0x02U) |> to_int in
-        let at_next = logand (shift_right_logical data shift) 0x3U |> to_uint8 in 
-        at_low_next := Uint8.(logand 0x1u at_next <> 0u);
-        at_high_next := Uint8.(logand 0x2u at_next <> 0u);
+        at_next := logand (shift_right_logical data shift) 0x3U |> to_uint8
       | 5 -> (* load low BG tile byte to next_bg_low (pattern table)
                 PPU addresses within the pattern tables can be decoded as follows:
                 0HRRRR CCCCPTTT
