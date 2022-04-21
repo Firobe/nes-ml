@@ -420,14 +420,6 @@ module Rendering = struct
     (* Process *)
     (* Visible scanlines : 0 - 239 *)
     if !scanline <= 239 then (
-      (*
-      if !scanline = 0 && !cycle = 1 then (
-        ppu_address := Uint16.(logand !ppu_address 0b000111111111111U);
-        Printf.printf "Scroll Y: %d%!\n"
-          Uint16.(logand 0b111U (shift_right_logical !ppu_address 12)
-                  |> to_int)
-      );
-         *)
       data_fetching disp true
     )
     (* Post-render scanline : 240  (IDLE) *)
