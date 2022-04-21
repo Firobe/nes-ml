@@ -95,7 +95,6 @@ let set_register register (v : uint8) =
     let to_set = Uint16.shift_left (u16of8 @@ Uint8.logand v 3u) 10 in
     let with_hole = Uint16.logand !temp_vram_address 0b111001111111111U in
     temp_vram_address := Uint16.logor to_set with_hole ;
-    (* TODO going accross, going down ? *)
     ppudata_increment := if nth_bit v 2 then 32U else 1U;
     sprite_pattern_address := if (nth_bit v 3) then 0x1000U else 0U;
     background_pattern_address := if (nth_bit v 4) then 0x1000U else 0U;
@@ -209,20 +208,6 @@ module Rendering = struct
   let _sprite_attributes = Array.make 8 0u
   let _sprite_positions = Array.make 8 0u
 
-  (*
-  let get_address (x : uint16) (y : uint16) =
-    let open Uint16 in
-    let x_add = x + (u16 32)
-                            * (u16of8 Uint8.(logand !base_nametable one)) in
-    let y_add = x + (u16 30) (* TODO : why 30 ? *)
-                            * (u16of8 Uint8.(shift_right_logical !base_nametable 1)) in
-    let x_mir = rem x_add (u16 (if !mirroring_mode then 64 else 32)) in
-    let y_mir = rem y_add (u16 (if !mirroring_mode then 30 else 60)) in
-    let quad_nb = (y_mir / (u16 30)) * (u16 2) + (x_mir / (u16 32)) in
-    let base = (u16 0x2000) + (u16 0x400) * quad_nb in
-    base, (rem x (u16 32)), (rem y (u16 30))
-     *)
-
   let draw_pixel disp x y pal_start ~pal:palette_nb ~pat:color_nb =
     if color_nb <> 0u then
       (* Get a palette address, a palette number and a color number, give the
@@ -324,14 +309,7 @@ module Rendering = struct
         let v = !ppu_address in
         let tile_address = logor 0x2000U (logand v 0xFFFU) in
         nt_next := get_ppu tile_address
-      | 3 ->
-        (* load AT byte to shift8_at_next
-           The low 12 bits of the attribute address are composed in the following way:
-           NN 1111 YYY XXX
-           || |||| ||| +++-- high 3 bits of coarse X (x/4)
-           || |||| +++------ high 3 bits of coarse Y (y/4)
-           || ++++---------- attribute offset (960 bytes)
-           ++--------------- nametable select *)
+      | 3 -> (* load AT byte to shift8_at_next *)
         (* stolen from mesen *)
         let open Uint16 in
         let v = !ppu_address in
@@ -342,15 +320,7 @@ module Rendering = struct
         let shift = logor (logand 0x04U (shift_right_logical v 4))
             (logand v 0x02U) |> to_int in
         at_next := logand (shift_right_logical data shift) 0x3U |> to_uint8
-      | 5 -> (* load low BG tile byte to next_bg_low (pattern table)
-                PPU addresses within the pattern tables can be decoded as follows:
-                0HRRRR CCCCPTTT
-                |||||| |||||+++- T: Fine Y offset, the row number within a tile
-                |||||| ||||+---- P: Bit plane (0: "lower"; 1: "upper")
-                |||||| ++++----- C: Tile column
-                ||++++---------- R: Tile row
-                |+-------------- H: Half of sprite table (0: "left"; 1: "right")
-                +--------------- 0: Pattern table is at $0000-$1FFF *)
+      | 5 -> (* load low BG tile byte to next_bg_low (pattern table) *)
         let open Uint16 in
         let v = !ppu_address in
         let finey = shift_right_logical (logand v 0x7000U) 12 in
