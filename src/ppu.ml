@@ -1,4 +1,4 @@
-open Stdint
+open Infix_int.Common
 
 (* Important links
  * - Memory map : https://wiki.nesdev.com/w/index.php/PPU_memory_map
@@ -69,32 +69,32 @@ let read_latch () =
 let bus_latch = ref 0x00u
 
 let int_of_bool b = if b then 1 else 0
-let nth_bit b n =
-  Uint8.((logand b (shift_left one n)) <> zero)
+let nth_bit b n = U8.(b $& (1u $<< n) <> 0u)
 
 (* PPU memory address with redirections *)
 let address_indirection v =
-  let open Uint16 in
+  let open U16 in
   if v <= 0x2FFFU then v
-  else if v <= 0x3EFFU then logand v 0x2FFFU
+  else if v <= 0x3EFFU then v $& 0x2FFFU
   else 
-    let v = logand v 0x3F1FU in
-    if logand v 0x7U = 0U then logand v (lognot 0x10U) else v
+    let v = v $& 0x3F1FU in
+    if v $& 0x7U = 0U then v $& ?~0x10U else v
 
-let set_ppu v x = memory.(address_indirection v |> Uint16.to_int) <- x
-let get_ppu v = memory.(address_indirection v |> Uint16.to_int)
+let set_ppu v x = memory.(address_indirection v |> U16.to_int) <- x
+let get_ppu v = memory.(address_indirection v |> U16.to_int)
 
-let increment_ppu_address () = ppu_address := Uint16.(!ppu_address + !ppudata_increment)
+let increment_ppu_address () = ppu_address := U16.(!ppu_address + !ppudata_increment)
 
 open C6502.Int_utils
-let set_register register (v : uint8) =
+let set_register register (v : U8.t) =
+  let open U16 in
   bus_latch := v ;
   match register with
   | 0 -> (* Control register *)
     (* t: ...GH.. ........ <- d: ......GH *)
-    let to_set = Uint16.shift_left (u16of8 @@ Uint8.logand v 3u) 10 in
-    let with_hole = Uint16.logand !temp_vram_address 0b111001111111111U in
-    temp_vram_address := Uint16.logor to_set with_hole ;
+    let to_set = ?$ U8.(v $& 3u) $<< 10 in
+    let with_hole = !temp_vram_address $& 0x73FFU in
+    temp_vram_address := to_set $| with_hole;
     ppudata_increment := if nth_bit v 2 then 32U else 1U;
     sprite_pattern_address := if (nth_bit v 3) then 0x1000U else 0U;
     background_pattern_address := if (nth_bit v 4) then 0x1000U else 0U;
@@ -113,30 +113,30 @@ let set_register register (v : uint8) =
   | 3 -> (* OAM address *)
     oam_address := v
   | 4 -> (* OAM data *)
-    oam.(Uint8.to_int !oam_address) <- v;
-    oam_address := Uint8.(succ !oam_address)
+    oam.(U8.to_int !oam_address) <- v;
+    oam_address := U8.(succ !oam_address)
   | 5 -> (* Scroll register *)
     if read_latch () then
       (* t: ....... ...ABCDE <- d: ABCDE... *)
-      let to_set = Uint16.shift_right_logical (u16of8 v) 3 in
-      let with_hole = Uint16.logand !temp_vram_address 0xFFE0U in
-      temp_vram_address := Uint16.logor to_set with_hole ;
+      let to_set = ?$ v $>> 3 in
+      let with_hole = !temp_vram_address $& 0xFFFE0U in
+      temp_vram_address := to_set $| with_hole;
       (* x:              FGH <- d: .....FGH *)
-      fine_x_scroll := Uint8.logand v 7u
+      fine_x_scroll := U8.(v $& 7u)
     else
       (* t: FGH..AB CDE..... <- d: ABCDEFGH *)
-      let fgh = Uint16.shift_left (u16of8 (Uint8.logand v 7u)) 12 in
-      let abcde = Uint16.shift_left (u16of8 (Uint8.logand v 0xF8u)) 2 in
-      let with_hole = Uint16.logand !temp_vram_address 0xC1FU in
-      let with_fgh = Uint16.logor with_hole fgh in
-      temp_vram_address := Uint16.logor with_fgh abcde
+      let fgh = ?$ U8.(v $& 7u) $<< 12 in
+      let abcde = ?$ U8.(v $& 0xF8u) $<< 2 in
+      let with_hole = !temp_vram_address $& 0xC1FU in
+      let with_fgh = with_hole $| fgh in
+      temp_vram_address := with_fgh $| abcde
   | 6 -> (* PPU address *)
     if read_latch () then
       (* t: .CDEFGH ........ <- d: ..CDEFGH
          <unused>     <- d: AB......
          t: Z...... ........ <- 0 (bit Z is cleared) *)
-      temp_vram_address := Uint16.logand
-          (mk_addr ~lo:(get_lo !temp_vram_address) ~hi:v) 0x3FFFU
+      temp_vram_address := 
+          (mk_addr ~lo:(get_lo !temp_vram_address) ~hi:v) $& 0x3FFFU
     else (
       (* t: ....... ABCDEFGH <- d: ABCDEFGH
          v: <...all bits...> <- t: <...all bits...> *)
@@ -150,6 +150,7 @@ let set_register register (v : uint8) =
 
 let vram_buffer = ref 0u
 let get_register reg =
+  let open U16 in
   let res = match reg with
   | 2 -> (* Status register *)
     latch := true;
@@ -159,15 +160,15 @@ let get_register reg =
     vbl_read := true;
     vblank_enabled := false; (u8 r)
   | 4 -> (* OAM data *)
-    oam.(Uint8.to_int !oam_address)
+    oam.(U8.to_int !oam_address)
   | 7 -> (* PPU data *)
     (* Palette mirroring *)
     let addr = address_indirection !ppu_address in
-    ppu_address := Uint16.(logand (!ppu_address + !ppudata_increment) 0x3FFFU);
+    ppu_address := (!ppu_address + !ppudata_increment) $& 0x3FFFU;
     (* Correct buffer *)
     if addr >= 0x3F00U then begin
       (* TODO what is this ? why are we doing this ? *)
-      vram_buffer := get_ppu Uint16.(logand addr 0x2F1FU);
+      vram_buffer := get_ppu (addr $& 0x2F1FU);
       get_ppu addr
     end else begin
       let old = !vram_buffer in
@@ -180,8 +181,8 @@ let get_register reg =
 let dma read cpu_begin =
   let rec aux cpu_addr oam_addr length =
     if length > 0 then (
-      oam.(Uint8.to_int oam_addr) <- read cpu_addr;
-      aux (Uint16.succ cpu_addr) (Uint8.succ oam_addr) (length - 1)
+      oam.(U8.to_int oam_addr) <- read cpu_addr;
+      aux U16.(succ cpu_addr) U8.(succ oam_addr) (length - 1)
     )
   in aux cpu_begin !oam_address 0x100
 
@@ -213,9 +214,9 @@ module Rendering = struct
       (* Get a palette address, a palette number and a color number, give the
        * corresponding color *)
       let address =
-        Uint16.(pal_start + (u16of8 palette_nb) * 4U + (u16of8 color_nb)) in
+        U16.(pal_start + (u16of8 palette_nb) * 4U + (u16of8 color_nb)) in
       let color = get_ppu address in
-      Display.set_pixel disp ~x:(Uint8.to_int x) ~y:(Uint8.to_int y) ~color
+      Display.set_pixel disp ~x:(U8.to_int x) ~y:(U8.to_int y) ~color
 
   (*
   let render_sprite nb f =
@@ -227,14 +228,14 @@ module Rendering = struct
     let xpos = oam.(nb + 3) in
     let attributes = oam.(nb + 2) in
     let tile_nb = oam.(nb + 1) in
-    let palette = Uint8.logand attributes 3u in
+    let palette = U8.logand attributes 3u in
     let flip_h = nth_bit attributes 6 in
     let flip_v = nth_bit attributes 7 in
     for y = 0 to 7 do
-      if Uint8.(ypos + (u8 y)) < 240u then
+      if U8.(ypos + (u8 y)) < 240u then
         for x = 0 to 7 do
-          let x' = Uint8.(xpos + (u8 x)) in
-          let y' = Uint8.(ypos + (u8 y)) in
+          let x' = U8.(xpos + (u8 x)) in
+          let y' = U8.(ypos + (u8 y)) in
           let fx = if flip_h then 7 - x else x in
           let fy = if flip_v then 7 - y else y in
           let color_nb = decode_chr !sprite_pattern_address
@@ -244,12 +245,13 @@ module Rendering = struct
     done
      *)
 
-  let shift1_8 r = r := Uint8.shift_left !r 1
-  let shift1_16 r = r := Uint16.shift_left !r 1
+  let shift1_8 r = r := U8.(!r $<< 1)
+  let shift1_16 r = r := U16.(!r $<< 1)
   let copy_bits_16 ~src ~dst mask =
-    let to_set = Uint16.logand src mask in
-    let with_hole = Uint16.logand dst (Uint16.lognot mask) in
-    Uint16.logor to_set with_hole
+    let open U16 in
+    let to_set = src $& mask in
+    let with_hole = dst $& ?~mask in
+    to_set $| with_hole
 
   (* Remember:
    * - name table: associate a kind of pattern to a tile
@@ -258,24 +260,24 @@ module Rendering = struct
    *)
 
   let inc_hori v =
-    let open Uint16 in
-    let coarse = logand !v 0x001FU in
+    let open U16 in
+    let coarse = !v $& 0x001FU in
     if coarse = 0x1FU then (
-      v := logand !v (lognot 0x1FU);
-      v := logxor !v 0x0400U;
+      v := !v $& ?~0x1FU;
+      v := !v $^ 0x0400U;
     )
     else v := !v + 1U
 
   let inc_vert v =
-    let open Uint16 in
-    if (logand !v 0x7000U) <> 0x7000U then
+    let open U16 in
+    if !v $& 0x7000U <> 0x7000U then
       v := !v + 0x1000U
     else (
-      v := logand !v (lognot 0x7000U);
-      let y = ref (shift_right_logical (logand !v 0x03E0U) 5) in
+      v := !v $& ?~0x7000U;
+      let y = ref ((!v $& 0x03E0U) $>> 5) in
       if !y = 29U then (
         y := 0U;
-        v := logxor !v 0x0800U
+        v := !v $^ 0x0800U
       )
       else if !y = 31U then (
         y := 0U
@@ -283,12 +285,20 @@ module Rendering = struct
       else (
         y := !y + 1U
       ) ;
-      v := logor (logand !v (lognot 0x03E0U)) (shift_left !y 5)
+      v := (!v $& ?~0x03E0U) $| (!y $<< 5);
     )
+
+  let bg_address () =
+    let open U16 in
+    let v = !ppu_address in
+    let finey = (v $& 0x7000U) $>> 12 in
+    let tile_offset = ?$ !nt_next * 16U in
+    !background_pattern_address + tile_offset + finey
 
   let fetch_next_data () =
     (* Step number in the fetching process *)
     let local_step = !cycle mod 8 in
+    let open U16 in
     (* Every 8 cycles (9, 17, 25, ..., 257 *)
     (* Actual memory fetching *)
     (* Only 12 first bits of address should be used *)
@@ -301,54 +311,39 @@ module Rendering = struct
           (* Reload shifters *)
           bg_low := mk_addr ~lo:!next_bg_low ~hi:(get_hi !bg_low) ;
           bg_high := mk_addr ~lo:!next_bg_high ~hi:(get_hi !bg_high) ;
-          at_low_next := Uint8.(logand 0x1u !at_next <> 0u);
-          at_high_next := Uint8.(logand 0x2u !at_next <> 0u);
+          at_low_next := U8.(0x1u $& !at_next <> 0u);
+          at_high_next := U8.(0x2u $& !at_next <> 0u)
         );
         (* load NT byte to shift8_nt_next *)
-        let open Uint16 in
         let v = !ppu_address in
-        let tile_address = logor 0x2000U (logand v 0xFFFU) in
+        let tile_address = 0x2000U $| (v $& 0xFFFU) in
         nt_next := get_ppu tile_address
       | 3 -> (* load AT byte to shift8_at_next *)
         (* stolen from mesen *)
-        let open Uint16 in
         let v = !ppu_address in
-        let addr = logor 0x23C0U (logand v 0x0C00U) in
-        let addr = logor addr (logand (shift_right_logical v 4) 0x38U) in
-        let addr = logor addr (logand (shift_right_logical v 2) 0x7U) in
-        let data = get_ppu addr |> of_uint8 in
-        let shift = logor (logand 0x04U (shift_right_logical v 4))
-            (logand v 0x02U) |> to_int in
-        at_next := logand (shift_right_logical data shift) 0x3U |> to_uint8
+        let addr = 0x23C0U $| (v $& 0x0C00U) $| ((v $>> 4) $& 0x38U)
+                   $| ((v $>> 2) $& 0x7U) in
+        let data = ?$ (get_ppu addr) in
+        let shift = ?% ((0x04U $& (v $>> 4)) $| (v $& 0x02U)) in
+        at_next := U8.(?$$) (0x3U $& (data $>> shift))
       | 5 -> (* load low BG tile byte to next_bg_low (pattern table) *)
-        let open Uint16 in
-        let v = !ppu_address in
-        let finey = shift_right_logical (logand v 0x7000U) 12 in
-        let tile_offset = (of_uint8 !nt_next * 16U) in
-        let addr = !background_pattern_address + tile_offset + finey in
-        next_bg_low := get_ppu addr
-      | 7 ->
-        (* load high BG tile byte to next_bg_high
-         * same as above with additional bit *)
-        let open Uint16 in
-        let finey = shift_right_logical (logand !ppu_address 0x7000U) 12 in
-        let tile_offset = (of_uint8 !nt_next * 16U)  in
-        let addr = !background_pattern_address + tile_offset + finey + 8U in
-        next_bg_high := get_ppu addr
+        next_bg_low := get_ppu (bg_address ())
+      | 7 -> (* load high BG tile byte to next_bg_high *)
+        next_bg_high := get_ppu (bg_address () + 8U)
       | _ -> ()
     end
 
   let render_pixel disp =
-    let scroll1 = 15 - Uint8.to_int !fine_x_scroll in
-    let scroll2 = 7 - Uint8.to_int !fine_x_scroll in
-    let open Uint16 in
-    let patl = logand (shift_right !bg_low scroll1) 0x1U in
-    let path = logand (shift_right !bg_high scroll1) 0x1U in
-    let pat = logor (shift_left path 1) patl |> Uint16.to_uint8 in
-    let open Uint8 in
-    let pall = logand (shift_right !at_low scroll2) 0x1u in
-    let palh = logand (shift_right !at_high scroll2) 0x1u in
-    let pal = logor (shift_left palh 1) pall in
+    let scroll1 = 15 - U8.to_int !fine_x_scroll in
+    let scroll2 = 7 - U8.to_int !fine_x_scroll in
+    let open U16 in
+    let patl = (!bg_low $>> scroll1) $& 0x1U in
+    let path = (!bg_high $>> scroll1) $& 0x1U in
+    let pat = U8.(?$$) (patl $| (path $<< 1)) in
+    let open U8 in
+    let pall = (!at_low $>> scroll2) $& 0x1u in
+    let palh = (!at_high $>> scroll2) $& 0x1u in
+    let pal = (palh $<< 1) $| pall in
     let x = of_int Stdlib.(!cycle - 1) in
     let y = of_int !scanline in
     draw_pixel disp x y 0x3F00U ~pal ~pat
@@ -358,8 +353,8 @@ module Rendering = struct
     shift1_16 bg_high ;
     shift1_8 at_low ;
     shift1_8 at_high ;
-    at_low := if !at_low_next then Uint8.succ !at_low else !at_low;
-    at_high := if !at_high_next then Uint8.succ !at_high else !at_high
+    at_low := if !at_low_next then U8.succ !at_low else !at_low;
+    at_high := if !at_high_next then U8.succ !at_high else !at_high
 
   let data_fetching disp render =
     (* Cycle 0 : IDLE *)
@@ -505,7 +500,7 @@ module Debug = struct
     set_nametable 0x2800 0 30;
     set_nametable 0x2C00 32 30;
     for x = 0 to 63 do
-      Display.set_pixel disp ~x ~y:60 ~color:(Uint8.of_int x)
+      Display.set_pixel disp ~x ~y:60 ~color:(U8.of_int x)
     done;
     for x = 0 to 31 do
       let color = memory.(0x3F00 + x) in
@@ -521,11 +516,11 @@ module Debug = struct
           let v = memory.(addr) in
           let x' = x * 2 + x_orig in
           let y' = y * 2 + y_orig in
-          let open Uint8 in
-          let top_left = logand 0x3u v in
-          let top_right = logand (shift_right_logical v 2) 0x3u in
-          let bot_left = logand (shift_right_logical v 4) 0x3u in
-          let bot_right = logand (shift_right_logical v 6) 0x3u in
+          let open U8 in
+          let top_left = v $& 0x3u in
+          let top_right = (v $>> 2) $& 0x3u in
+          let bot_left = (v $>> 4) $& 0x3u in
+          let bot_right = (v $>> 6) $& 0x3u in
           let open Stdlib in
           Display.set_pixel disp ~x:x' ~y:y' ~color:top_left;
           Display.set_pixel disp ~x:(x'+1) ~y:y' ~color:top_right;
@@ -549,10 +544,10 @@ module Debug = struct
               let low = memory.(addr + y) in
               let high = memory.(addr + y + 8) in
               let shift = 7 - x in
-              let open Uint8 in
-              let low = logand (shift_right_logical low shift) 0x1u in
-              let high = logand (shift_right_logical high shift) 0x1u in
-              let color = logor low (high * 2u) in
+              let open U8 in
+              let low = (low $>> shift) $& 1u in
+              let high = (high $>> shift) $& 1u in
+              let color = low $| (high * 2u) in
               let open Stdlib in
               Display.set_pixel disp
                 ~x:(tile_x * 8 + x + x_orig) ~y:(tile_y * 8 + y + y_orig) ~color

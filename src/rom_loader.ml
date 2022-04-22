@@ -1,4 +1,4 @@
-open Stdint
+open Infix_int.Common
 exception Invalid_ROM of string
 
 type rom_config = {
@@ -79,15 +79,15 @@ module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
   let mem = Array.make 0x8000 0u (* Main memory *)
 
   let address_mirroring a =
-    let open Uint16 in
+    let open U16 in
     if a < 0x2000U then (* RAM mirroring *)
-      logand a 0x07FFU
-    else if (shift_right_logical a 13) = 1U then (* PPU mirroring *) (* TODO also mask ?*)
-      logand a 0x2007U
+      a $& 0x07FFU
+    else if (a $>> 13) = 1U then (* PPU mirroring *) (* TODO also mask ?*)
+      a $& 0x2007U
     else a
 
-  let read (a : uint16) : uint8 =
-    let open Uint16 in
+  let read (a : U16.t) : U8.t =
+    let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
       Ppu.get_register (to_int (logand a 7U))
@@ -95,20 +95,20 @@ module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
       Input.next_register ()
     else if is_in_cartridge_range a then
       C.read a
-    else mem.(Uint16.to_int a)
+    else mem.(?% a)
 
-  let write (a : uint16) (v : uint8) =
-    let open Uint16 in
+  let write (a : U16.t) (v : U8.t) =
+    let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
       Ppu.set_register (to_int (logand a 7U)) v
     else if is_in_apu_range a then
       Apu.write_register v a
     else if a = 0x4014U then
-      Ppu.dma read Uint16.(shift_left (of_uint8 v) 8)
+      Ppu.dma read (?$ v $<< 8)
     else if is_in_cartridge_range a then
       C.write a v
-    else mem.(Uint16.to_int a) <- v
+    else mem.(?% a) <- v
 end
 
 module NROM (R : ROM) = struct
@@ -122,8 +122,9 @@ module NROM (R : ROM) = struct
       Array.blit rom.prg_rom 0 m 0x4000 0x4000;
       Array.map C6502.Int_utils.u8 m
 
-  let read a = prg_rom.(Uint16.(to_int @@ logand a 0x7FFFU))
-  let write a v = prg_rom.(Uint16.(to_int @@ logand a 0x7FFFU)) <- v
+  open U16
+  let read a = prg_rom.(?% (a $& 0x7FFFU))
+  let write a v = prg_rom.(?% (a $& 0x7FFFU)) <- v
 end
 
 module UxROM (R : ROM) = struct
@@ -139,13 +140,14 @@ module UxROM (R : ROM) = struct
   let last_bank = banks.(Array.length banks - 1)
   let selected = ref 0
 
+  open U16
   let read a =
     if a >= 0xC000U then
-      last_bank.(Uint16.(to_int @@ logand a 0X3FFFU))
+      last_bank.(?% (a $& 0X3FFFU))
     else
-      banks.(!selected).(Uint16.(to_int @@ logand a 0x3FFFU))
+      banks.(!selected).(?% (a $& 0x3FFFU))
 
-  let write _ v = selected := Uint8.to_int v
+  let write _ v = selected := U8.to_int v
 end
 
 let mappers = [
