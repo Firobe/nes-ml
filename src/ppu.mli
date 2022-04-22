@@ -1,6 +1,10 @@
 open Stdint
 
-val memory : uint8 array
+module State : sig
+  module Mem : sig
+    val main : uint8 array
+  end
+end
 
 val get_register : int -> uint8
 val set_register : int -> uint8 -> unit

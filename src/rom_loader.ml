@@ -166,9 +166,12 @@ let load_rom path =
   Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
   Printf.printf "CHR ROM is %d bytes\n" config.chr_rom_size;
   Printf.printf "PRG RAM : %B\n" config.prg_ram_present;
+  if config.tv_system then (
+    raise (Invalid_ROM "PAL is not supported")
+  );
   Printf.printf "TV system : %s\n"
     (if config.tv_system then "PAL" else "NTSC");
-  Printf.printf "Mirroring type : %B\n" config.mirroring;
+  Printf.printf "Mirroring type : %B\n%!" config.mirroring;
   let cur_address = ref 0x10 in
   let trainer = if not config.trainer then None else (
       cur_address := !cur_address + 0x200;

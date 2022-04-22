@@ -3,7 +3,7 @@ exception Crash
 let load_rom_memory rom =
   let open Rom_loader in
   Array.blit (Array.map C6502.Int_utils.u8 rom.chr_rom)
-    0 Ppu.memory 0x0 (rom.config.chr_rom_size)
+    0 Ppu.State.Mem.main 0x0 (rom.config.chr_rom_size)
 
 let rec n_times f n =
   if n > 0 then (

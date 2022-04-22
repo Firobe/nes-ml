@@ -21,52 +21,100 @@ let palette =
      0xFCFCFC; 0xA4E4FC; 0xB8B8F8; 0xD8B8F8; 0xF8B8F8; 0xF8A4C0; 0xF0D0B0; 0xFCE0A8;
      0xF8D878; 0xD8F878; 0xB8F8B8; 0xB8F8D8; 0x00FCFC; 0xF8D8F8; 0x000000; 0x000000]
 
-(* Main memory *)
-let memory = Array.make 0x4000 0u
-let oam = Array.make 0x100 0u
 
-(* Status *)
-let vblank_enabled = ref true
+module State = struct
 
-(* Control register *)
-let ppudata_increment = ref 1U
-let sprite_pattern_address = ref 0x0000U
-let background_pattern_address = ref 0x0000U
-let sprite_size = ref false
-let master_slave_mode = ref false
-let nmi_enabled = ref false
+  module Mem = struct
+    (* Main memory *)
+    let main = Array.make 0x4000 0u
+    let address = ref 0U
+    let temp_address = ref 0U (* 15-bit *)
+  end
 
-(* Mask register *)
-let greyscale = ref false
-let show_background_leftmost = ref false
-let show_sprites_leftmost = ref false
-let show_background = ref false
-let show_sprites = ref false
-let emph_red = ref false
-let emph_green = ref false
-let emph_blue = ref false
+  module OAM = struct
+    let address = ref 0u
 
-let mirroring_mode = ref false (* 0 : horizon (vert arr) *)
-let sprite_0_hit = ref false
+    let primary = Array.make 0x100 0u
+    let seconday = Array.make 0x20 0u
+    (* Contain pattern table data *)
+    let _render_shifters = Array.init 8 (fun _ -> (ref 0u, ref 0u))
+    (* Contain attribute bytes *)
+    let _latches = Array.make 8 0u
+    (* Contain X positions *)
+    let _counters = Array.make 8 0u
+  end
 
-let oam_address = ref 0u
-let ppu_address = ref 0U
+  (* Control register *)
+  module Control = struct
+    let increment = ref 1U
+    let sprite_pattern_address = ref 0x0000U
+    let background_pattern_address = ref 0x0000U
+    let sprite_size = ref false
+    let master_slave_mode = ref false
+    let nmi_enabled = ref false
+  end
 
-(* Scrolling *)
-let temp_vram_address = ref 0U (* 15-bit *)
-let fine_x_scroll = ref 0u
+  (* Mask register *)
+  module Graphics = struct
+    let greyscale = ref false
+    let background_leftmost = ref false
+    let sprites_leftmost = ref false
+    let background = ref false
+    let show_sprites = ref false
+    let emph_red = ref false
+    let emph_green = ref false
+    let emph_blue = ref false
+  end
 
-let interrupt_cpu = ref None
-let vbl_read = ref false
+  (* Status register *)
+  module Status = struct
+    let sprite_0_hit = ref false
+    let vblank_enabled = ref true
+    let vbl_read = ref false
+  end
 
-(* Latch for PPUSCROLL and PPUADDR *)
-let latch = ref true (* True : first set *)
+  module Rendering = struct
+    let frame = ref 0
+    let scanline = ref 261
+    let cycle = ref 0
+
+    module BG = struct
+      (* For storing pattern table data for two tiles *)
+      let low, high = ref 0U, ref 0U
+      let next_low, next_high = ref 0u, ref 0u
+    end
+    module AT = struct
+      (* For storing palette attributes, not shifting *)
+      let low, high = ref 0u, ref 0u
+      let low_next, high_next = ref false, ref false
+      let next = ref 0u
+    end
+    module NT = struct
+      let next = ref 0u
+    end
+  end
+
+  (* Set at init *)
+  let mirroring_mode = ref false (* 0 : horizon (vert arr) *)
+  let interrupt_cpu = ref None
+
+  (* Scrolling *)
+  let fine_x_scroll = ref 0u
+
+  (* Latch for PPUSCROLL and PPUADDR *)
+  let latch = ref true (* True : first set *)
+
+  let bus_latch = ref 0x00u
+
+  let vram_buffer = ref 0u
+end
+
+open State
+
 let read_latch () =
   let r = !latch in
   latch := not !latch;
   r
-
-let bus_latch = ref 0x00u
 
 let int_of_bool b = if b then 1 else 0
 let nth_bit b n = U8.(b $& (1u $<< n) <> 0u)
@@ -80,10 +128,10 @@ let address_indirection v =
     let v = v $& 0x3F1FU in
     if v $& 0x7U = 0U then v $& ?~0x10U else v
 
-let set_ppu v x = memory.(address_indirection v |> U16.to_int) <- x
-let get_ppu v = memory.(address_indirection v |> U16.to_int)
+let set_ppu v x = Mem.main.(address_indirection v |> U16.to_int) <- x
+let get_ppu v = Mem.main.(address_indirection v |> U16.to_int)
 
-let increment_ppu_address () = ppu_address := U16.(!ppu_address + !ppudata_increment)
+let increment_ppu_address () = Mem.address := U16.(!Mem.address + !Control.increment)
 
 open C6502.Int_utils
 let set_register register (v : U8.t) =
@@ -93,78 +141,77 @@ let set_register register (v : U8.t) =
   | 0 -> (* Control register *)
     (* t: ...GH.. ........ <- d: ......GH *)
     let to_set = ?$ U8.(v $& 3u) $<< 10 in
-    let with_hole = !temp_vram_address $& 0x73FFU in
-    temp_vram_address := to_set $| with_hole;
-    ppudata_increment := if nth_bit v 2 then 32U else 1U;
-    sprite_pattern_address := if (nth_bit v 3) then 0x1000U else 0U;
-    background_pattern_address := if (nth_bit v 4) then 0x1000U else 0U;
-    sprite_size := nth_bit v 5;
-    master_slave_mode := nth_bit v 6;
-    nmi_enabled := nth_bit v 7
+    let with_hole = !Mem.temp_address $& 0x73FFU in
+    Mem.temp_address := to_set $| with_hole;
+    Control.increment := if nth_bit v 2 then 32U else 1U;
+    Control.sprite_pattern_address := if (nth_bit v 3) then 0x1000U else 0U;
+    Control.background_pattern_address := if (nth_bit v 4) then 0x1000U else 0U;
+    Control.sprite_size := nth_bit v 5;
+    Control.master_slave_mode := nth_bit v 6;
+    Control.nmi_enabled := nth_bit v 7
   | 1 -> (* Mask register *)
-    greyscale := nth_bit v 0;
-    show_background_leftmost := nth_bit v 1;
-    show_sprites_leftmost := nth_bit v 2;
-    show_background := nth_bit v 3;
-    show_sprites := nth_bit v 4;
-    emph_red := nth_bit v 5;
-    emph_green := nth_bit v 6;
-    emph_blue := nth_bit v 7
+    Graphics.greyscale := nth_bit v 0;
+    Graphics.background_leftmost := nth_bit v 1;
+    Graphics.sprites_leftmost := nth_bit v 2;
+    Graphics.background := nth_bit v 3;
+    Graphics.show_sprites := nth_bit v 4;
+    Graphics.emph_red := nth_bit v 5;
+    Graphics.emph_green := nth_bit v 6;
+    Graphics.emph_blue := nth_bit v 7
   | 3 -> (* OAM address *)
-    oam_address := v
+    OAM.address := v
   | 4 -> (* OAM data *)
-    oam.(U8.to_int !oam_address) <- v;
-    oam_address := U8.(succ !oam_address)
+    OAM.primary.(U8.to_int !OAM.address) <- v;
+    OAM.address := U8.(succ !OAM.address)
   | 5 -> (* Scroll register *)
     if read_latch () then
       (* t: ....... ...ABCDE <- d: ABCDE... *)
       let to_set = ?$ v $>> 3 in
-      let with_hole = !temp_vram_address $& 0xFFFE0U in
-      temp_vram_address := to_set $| with_hole;
+      let with_hole = !Mem.temp_address $& 0xFFFE0U in
+      Mem.temp_address := to_set $| with_hole;
       (* x:              FGH <- d: .....FGH *)
       fine_x_scroll := U8.(v $& 7u)
     else
       (* t: FGH..AB CDE..... <- d: ABCDEFGH *)
       let fgh = ?$ U8.(v $& 7u) $<< 12 in
       let abcde = ?$ U8.(v $& 0xF8u) $<< 2 in
-      let with_hole = !temp_vram_address $& 0xC1FU in
+      let with_hole = !Mem.temp_address $& 0xC1FU in
       let with_fgh = with_hole $| fgh in
-      temp_vram_address := with_fgh $| abcde
+      Mem.temp_address := with_fgh $| abcde
   | 6 -> (* PPU address *)
     if read_latch () then
       (* t: .CDEFGH ........ <- d: ..CDEFGH
          <unused>     <- d: AB......
          t: Z...... ........ <- 0 (bit Z is cleared) *)
-      temp_vram_address := 
-          (mk_addr ~lo:(get_lo !temp_vram_address) ~hi:v) $& 0x3FFFU
+      Mem.temp_address := 
+          (mk_addr ~lo:(get_lo !Mem.temp_address) ~hi:v) $& 0x3FFFU
     else (
       (* t: ....... ABCDEFGH <- d: ABCDEFGH
          v: <...all bits...> <- t: <...all bits...> *)
-      temp_vram_address := mk_addr ~hi:(get_hi !temp_vram_address) ~lo:v ;
-      ppu_address := !temp_vram_address
+      Mem.temp_address := mk_addr ~hi:(get_hi !Mem.temp_address) ~lo:v ;
+      Mem.address := !Mem.temp_address
     )
   | 7 -> (* PPU data *)
-    set_ppu !ppu_address v;
+    set_ppu !Mem.address v;
     increment_ppu_address ()
   | _ -> Printf.printf "Warning: trying to set PPU register %d\n" register
 
-let vram_buffer = ref 0u
 let get_register reg =
   let open U16 in
   let res = match reg with
   | 2 -> (* Status register *)
     latch := true;
     let r =
-      (int_of_bool !vblank_enabled) lsl 7 lor
-      (int_of_bool !sprite_0_hit) lsl 6 in
-    vbl_read := true;
-    vblank_enabled := false; (u8 r)
+      (int_of_bool !Status.vblank_enabled) lsl 7 lor
+      (int_of_bool !Status.sprite_0_hit) lsl 6 in
+    Status.vbl_read := true;
+    Status.vblank_enabled := false; (u8 r)
   | 4 -> (* OAM data *)
-    oam.(U8.to_int !oam_address)
+    OAM.primary.(U8.to_int !OAM.address)
   | 7 -> (* PPU data *)
     (* Palette mirroring *)
-    let addr = address_indirection !ppu_address in
-    ppu_address := (!ppu_address + !ppudata_increment) $& 0x3FFFU;
+    let addr = address_indirection !Mem.address in
+    Mem.address := (!Mem.address + !Control.increment) $& 0x3FFFU;
     (* Correct buffer *)
     if addr >= 0x3F00U then begin
       (* TODO what is this ? why are we doing this ? *)
@@ -181,33 +228,13 @@ let get_register reg =
 let dma read cpu_begin =
   let rec aux cpu_addr oam_addr length =
     if length > 0 then (
-      oam.(U8.to_int oam_addr) <- read cpu_addr;
+      OAM.primary.(U8.to_int oam_addr) <- read cpu_addr;
       aux U16.(succ cpu_addr) U8.(succ oam_addr) (length - 1)
     )
-  in aux cpu_begin !oam_address 0x100
+  in aux cpu_begin !OAM.address 0x100
 
 module Rendering = struct
-  let frame = ref 0
-  let scanline = ref 261
-  let cycle = ref 0
-
-  (* For storing pattern table data for two tiles *)
-  let bg_low, bg_high = ref 0U, ref 0U (* low, high *)
-  let next_bg_low = ref 0u
-  let next_bg_high = ref 0u
-  (* For storing palette attributes, not shifting *)
-  let at_low, at_high = ref 0u, ref 0u
-  let at_low_next, at_high_next = ref false, ref false
-  let nt_next = ref 0u
-  let at_next = ref 0u
-
-  (* Internal rendering registers : SPRITES
-   * Holds 8 sprites and their pattern table
-   * data, attributes and positions for the scanline *)
-  let _sec_oam = Array.make 0x20 0u
-  let _sprites_shifts = Array.make 16 0u
-  let _sprite_attributes = Array.make 8 0u
-  let _sprite_positions = Array.make 8 0u
+  open Rendering (* open state *)
 
   let draw_pixel disp x y pal_start ~pal:palette_nb ~pat:color_nb =
     if color_nb <> 0u then
@@ -220,7 +247,7 @@ module Rendering = struct
 
   (*
   let render_sprite nb f =
-    if !sprite_size && not !sprite_warned then (
+    if !Control.sprite_size && not !sprite_warned then (
       Printf.printf "Unsupported 8x16 sprites\n";
       sprite_warned := true
     ) ;
@@ -238,7 +265,7 @@ module Rendering = struct
           let y' = U8.(ypos + (u8 y)) in
           let fx = if flip_h then 7 - x else x in
           let fy = if flip_v then 7 - y else y in
-          let color_nb = decode_chr !sprite_pattern_address
+          let color_nb = decode_chr !Control.sprite_pattern_address
               tile_nb (u8 fx) (u8 fy) in
           f x' y' 0x3F10U ~pal:palette ~pat:color_nb
         done
@@ -252,12 +279,6 @@ module Rendering = struct
     let to_set = src $& mask in
     let with_hole = dst $& ?~mask in
     to_set $| with_hole
-
-  (* Remember:
-   * - name table: associate a kind of pattern to a tile
-   * - attribute table (depends on chosen name table): associate a palette to a tile
-   * - pattern table: defines different patterns
-   *)
 
   let inc_hori v =
     let open U16 in
@@ -290,10 +311,10 @@ module Rendering = struct
 
   let bg_address () =
     let open U16 in
-    let v = !ppu_address in
+    let v = !Mem.address in
     let finey = (v $& 0x7000U) $>> 12 in
-    let tile_offset = ?$ !nt_next * 16U in
-    !background_pattern_address + tile_offset + finey
+    let tile_offset = ?$ !NT.next * 16U in
+    !Control.background_pattern_address + tile_offset + finey
 
   let fetch_next_data () =
     (* Step number in the fetching process *)
@@ -304,32 +325,32 @@ module Rendering = struct
     (* Only 12 first bits of address should be used *)
     begin match local_step with
       | 0 ->
-        inc_hori ppu_address;
-        if !cycle = 256 then (inc_vert ppu_address)
+        inc_hori Mem.address;
+        if !cycle = 256 then (inc_vert Mem.address)
       | 1 ->
         if !cycle <> 0 then (
           (* Reload shifters *)
-          bg_low := mk_addr ~lo:!next_bg_low ~hi:(get_hi !bg_low) ;
-          bg_high := mk_addr ~lo:!next_bg_high ~hi:(get_hi !bg_high) ;
-          at_low_next := U8.(0x1u $& !at_next <> 0u);
-          at_high_next := U8.(0x2u $& !at_next <> 0u)
+          BG.low := mk_addr ~lo:!BG.next_low ~hi:(get_hi !BG.low) ;
+          BG.high := mk_addr ~lo:!BG.next_high ~hi:(get_hi !BG.high) ;
+          AT.low_next := U8.(0x1u $& !AT.next <> 0u);
+          AT.high_next := U8.(0x2u $& !AT.next <> 0u)
         );
         (* load NT byte to shift8_nt_next *)
-        let v = !ppu_address in
+        let v = !Mem.address in
         let tile_address = 0x2000U $| (v $& 0xFFFU) in
-        nt_next := get_ppu tile_address
+        NT.next := get_ppu tile_address
       | 3 -> (* load AT byte to shift8_at_next *)
         (* stolen from mesen *)
-        let v = !ppu_address in
+        let v = !Mem.address in
         let addr = 0x23C0U $| (v $& 0x0C00U) $| ((v $>> 4) $& 0x38U)
                    $| ((v $>> 2) $& 0x7U) in
         let data = ?$ (get_ppu addr) in
         let shift = ?% ((0x04U $& (v $>> 4)) $| (v $& 0x02U)) in
-        at_next := U8.(?$$) (0x3U $& (data $>> shift))
+        AT.next := U8.(?$$) (0x3U $& (data $>> shift))
       | 5 -> (* load low BG tile byte to next_bg_low (pattern table) *)
-        next_bg_low := get_ppu (bg_address ())
+        BG.next_low := get_ppu (bg_address ())
       | 7 -> (* load high BG tile byte to next_bg_high *)
-        next_bg_high := get_ppu (bg_address () + 8U)
+        BG.next_high := get_ppu (bg_address () + 8U)
       | _ -> ()
     end
 
@@ -337,33 +358,33 @@ module Rendering = struct
     let scroll1 = 15 - U8.to_int !fine_x_scroll in
     let scroll2 = 7 - U8.to_int !fine_x_scroll in
     let open U16 in
-    let patl = (!bg_low $>> scroll1) $& 0x1U in
-    let path = (!bg_high $>> scroll1) $& 0x1U in
+    let patl = (!BG.low $>> scroll1) $& 0x1U in
+    let path = (!BG.high $>> scroll1) $& 0x1U in
     let pat = U8.(?$$) (patl $| (path $<< 1)) in
     let open U8 in
-    let pall = (!at_low $>> scroll2) $& 0x1u in
-    let palh = (!at_high $>> scroll2) $& 0x1u in
+    let pall = (!AT.low $>> scroll2) $& 0x1u in
+    let palh = (!AT.high $>> scroll2) $& 0x1u in
     let pal = (palh $<< 1) $| pall in
     let x = of_int Stdlib.(!cycle - 1) in
     let y = of_int !scanline in
     draw_pixel disp x y 0x3F00U ~pal ~pat
 
   let shift_registers () =
-    shift1_16 bg_low ;
-    shift1_16 bg_high ;
-    shift1_8 at_low ;
-    shift1_8 at_high ;
-    at_low := if !at_low_next then U8.succ !at_low else !at_low;
-    at_high := if !at_high_next then U8.succ !at_high else !at_high
+    shift1_16 BG.low ;
+    shift1_16 BG.high ;
+    shift1_8 AT.low ;
+    shift1_8 AT.high ;
+    AT.low := if !AT.low_next then U8.succ !AT.low else !AT.low;
+    AT.high := if !AT.high_next then U8.succ !AT.high else !AT.high
 
   let data_fetching disp render =
     (* Cycle 0 : IDLE *)
     if !cycle = 0 then ()
     (* Cycles 1 - 256 : BACKGROUND FETCHING *)
-    else if !cycle <= 256 && !show_background then (
+    else if !cycle <= 256 && !Graphics.background then (
       fetch_next_data ();
       (* Pixel rendering *)
-      if render && (!cycle > 8 || !show_background_leftmost) then (
+      if render && (!cycle > 8 || !Graphics.background_leftmost) then (
         render_pixel disp
       );
       shift_registers ()
@@ -373,32 +394,43 @@ module Rendering = struct
       (* If rendering is enabled, the PPU copies all bits related to
        * horizontal position from t to v *)
       (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
-      if !cycle = 257 && !show_background then (
-        ppu_address :=
-          copy_bits_16 ~src:!temp_vram_address ~dst:!ppu_address 0x41FU
+      if !cycle = 257 && !Graphics.background then (
+        Mem.address :=
+          copy_bits_16 ~src:!Mem.temp_address ~dst:!Mem.address 0x41FU
       )
       (* TODO sprites *)
     )
     (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
-    else if !cycle <= 336 && !show_background then (
+    else if !cycle <= 336 && !Graphics.background then (
       fetch_next_data () ;
       shift_registers ()
     )
     (* Cycles 337-340 : USELESS *)
     else ()
 
+  let sprite_fetching () =
+    (* Cycle 0: IDLE *)
+    if !cycle = 0 then ()
+    (* Cycles 1-64: clear OAM' *)
+    else if !cycle <= 64 && !cycle mod 2 = 0 then
+      OAM.seconday.((!cycle - 1) / 2) <- 0xFFu
+    (* Cycles 65-256: sprite evaluation *)
+    else if !cycle <= 256 then ()
+    else ()
+
   let next_cycle disp =
     (* Process *)
     (* Visible scanlines : 0 - 239 *)
     if !scanline <= 239 then (
-      data_fetching disp true
+      sprite_fetching ();
+      data_fetching disp true;
     )
     (* Post-render scanline : 240  (IDLE) *)
     else if !scanline = 240 then ()
     (* Vertical blanking *)
     else if !scanline = 241 && !cycle = 1 then (
-      if not !vbl_read then vblank_enabled := true;
-      if !nmi_enabled && not !vbl_read then
+      if not !Status.vbl_read then Status.vblank_enabled := true;
+      if !Control.nmi_enabled && not !Status.vbl_read then
         Option.get !interrupt_cpu ()
     )
     (* Last vertical blanking lines : IDLE *)
@@ -407,29 +439,30 @@ module Rendering = struct
     else (
       (* Clear VBLANK *)
       if !cycle = 1 then (
-        vblank_enabled := false
+        Status.vblank_enabled := false
       );
       (* Fetch data for next frame *)
+      sprite_fetching ();
       data_fetching disp false;
       (*  If rendering is enabled, at the end of vblank, shortly after
        *  the horizontal bits are copied from t to v at dot 257, the PPU
        *  will repeatedly copy the vertical bits from t to v from dots
        *  280 to 304, completing the full initialization of v from t: *)
-      if !cycle >= 280 && !cycle <= 304 && !show_background then (
-        ppu_address :=
-          copy_bits_16 ~src:!temp_vram_address ~dst:!ppu_address 0x7BE0U
+      if !cycle >= 280 && !cycle <= 304 && !Graphics.background then (
+        Mem.address :=
+          copy_bits_16 ~src:!Mem.temp_address ~dst:!Mem.address 0x7BE0U
       )
       (* Final dot : change everything *)
       else if !cycle = 340 then (
-        sprite_0_hit := false ; 
+        Status.sprite_0_hit := false ; 
         incr frame ;
         (*render_sprites true 0 ;*)
         Display.render disp;
-        Display.clear disp memory.(0x3F00);
+        Display.clear disp Mem.main.(0x3F00);
         (*render_sprites false 0 ;*)
         (* this should be at cycle 1 *)
         (* Odd frame : jump to (0, 0) directly *)
-        if (!frame mod 2) = 1 && !show_background then (
+        if (!frame mod 2) = 1 && !Graphics.background then (
           scanline := 0;
           cycle := 0
         )
@@ -446,7 +479,7 @@ module Rendering = struct
         scanline := 0;
       )
     ) ;
-    vbl_read := false
+    Status.vbl_read := false
 end
 
 let init ic mm =
@@ -490,7 +523,7 @@ module Debug = struct
       for y = 0 to 29 do
         for x = 0 to 31 do
           let addr = addr + y * 32 + x in
-          let v = memory.(addr) in
+          let v = Mem.main.(addr) in
           Display.set_pixel disp ~x:(x + x_orig) ~y:(y + y_orig) ~color:v
         done
       done
@@ -503,7 +536,7 @@ module Debug = struct
       Display.set_pixel disp ~x ~y:60 ~color:(U8.of_int x)
     done;
     for x = 0 to 31 do
-      let color = memory.(0x3F00 + x) in
+      let color = Mem.main.(0x3F00 + x) in
       Display.set_pixel disp ~x:(x * 2) ~y:61 ~color;
       Display.set_pixel disp ~x:(x * 2 + 1) ~y:61 ~color
     done
@@ -513,7 +546,7 @@ module Debug = struct
       for y = 0 to 7 do
         for x = 0 to 7 do
           let addr = addr + y * 8 + x in
-          let v = memory.(addr) in
+          let v = Mem.main.(addr) in
           let x' = x * 2 + x_orig in
           let y' = y * 2 + y_orig in
           let open U8 in
@@ -541,8 +574,8 @@ module Debug = struct
           let addr = addr + (tile_y * 16 + tile_x) * 16 in
           for y = 0 to 7 do
             for x = 0 to 7 do
-              let low = memory.(addr + y) in
-              let high = memory.(addr + y + 8) in
+              let low = Mem.main.(addr + y) in
+              let high = Mem.main.(addr + y + 8) in
               let shift = 7 - x in
               let open U8 in
               let low = (low $>> shift) $& 1u in
