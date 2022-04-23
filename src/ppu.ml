@@ -517,11 +517,16 @@ module Rendering = struct
     let get_oam'_byte n m = OAM.secondary.(4 * n + m) in
     let sn = (!cycle - 257) / 8 in
     let step = (!cycle - 257) mod 8 in
+    let enabled = sn < (!OAM.next_open_slot / 4) in
     let fetch_tile ~high =
+      let y_pos = get_oam'_byte sn 0 in
+      let fine_offset = U16.(?@ !scanline - ?$ y_pos) in
       let index = get_oam'_byte sn 1 in
       let bank = if nth_bit index 0 then 0x1000U else 0x0U in
       let offset = U8.(index $& ?~1u) |> U16.of_uint8 in
-      let addr = pat_address ~bank ~offset in
+      let open U16 in
+      let offset = offset * 16U in
+      let addr = bank + offset + fine_offset in
       (*
       if OAM.counters.(sn) <> 0xffu then (
         Printf.printf "Index: %X Address: %X\n" (U8.to_int index) (U16.to_int addr)
@@ -533,8 +538,10 @@ module Rendering = struct
     match step with
     | 2 -> OAM.latches.(sn) <- get_oam'_byte sn 2
     | 3 -> OAM.counters.(sn) <- get_oam'_byte sn 3
-    | 4 -> (fst OAM.render_shifters.(sn)) := fetch_tile ~high:false
-    | 6 -> (snd OAM.render_shifters.(sn)) := fetch_tile ~high:true
+    | 4 when enabled -> (fst OAM.render_shifters.(sn)) := fetch_tile ~high:false
+    | 6 when enabled -> (snd OAM.render_shifters.(sn)) := fetch_tile ~high:true
+    | 4 -> (fst OAM.render_shifters.(sn)) := 0u
+    | 6 -> (fst OAM.render_shifters.(sn)) := 0u
     | 7 when OAM.counters.(sn) <> 0xffu ->
       (*
       Printf.printf "Y %d X %d AT %X PATL %X PATH %X\n%!"
