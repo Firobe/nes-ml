@@ -374,6 +374,38 @@ module Rendering = struct
       | _ -> ()
     end
 
+  let decrease_sprite_counters () =
+    for i = 0 to 7 do
+      if OAM.counters.(i) > 0u then
+        OAM.counters.(i) <- U8.(OAM.counters.(i) - 1u)
+    done
+
+  let combine8 ~low ~high =
+    let open U8 in
+    let l = low $& 1u in
+    let h = high $& 1u in
+    (h $<< 1) $| l
+
+  let sprite_pixel () =
+    let found = ref false in
+    let color = ref (0u, 0u) in
+    for i = 0 to 7 do
+      (* sprite is active *)
+      if (not !found) && OAM.counters.(i) = 0u then (
+        let low, high = OAM.render_shifters.(i) in
+        let scroll = 7 - U8.to_int !fine_x_scroll in
+        let pat = combine8 ~low:U8.(!low $>> scroll) ~high:U8.(!high $>> scroll) in
+        (* opaque pixel *)
+        if pat <> 0u then (
+          found := true;
+          let pal = U8.(OAM.latches.(i) $& 0x3u) in
+          color := (pat, pal)
+        )
+        else ()
+      )
+    done;
+    !color
+
   let render_pixel disp =
     let scroll1 = 15 - U8.to_int !fine_x_scroll in
     let scroll2 = 7 - U8.to_int !fine_x_scroll in
@@ -382,12 +414,13 @@ module Rendering = struct
     let path = (!BG.high $>> scroll1) $& 0x1U in
     let pat = U8.(?$$) (patl $| (path $<< 1)) in
     let open U8 in
-    let pall = (!AT.low $>> scroll2) $& 0x1u in
-    let palh = (!AT.high $>> scroll2) $& 0x1u in
-    let pal = (palh $<< 1) $| pall in
+    let pal = combine8 ~low:(!AT.low $>> scroll2) ~high:(!AT.high $>> scroll2)
+    in
     let x = of_int Stdlib.(!cycle - 1) in
     let y = of_int !scanline in
-    draw_pixel disp x y 0x3F00U ~pal ~pat
+    draw_pixel disp x y 0x3F00U ~pal ~pat;
+    let pat, pal = sprite_pixel () in
+    draw_pixel disp x y 0x3F10U ~pal ~pat
 
   let shift_registers () =
     shift1_16 BG.low ;
@@ -395,7 +428,14 @@ module Rendering = struct
     shift1_8 AT.low ;
     shift1_8 AT.high ;
     AT.low := if !AT.low_next then U8.succ !AT.low else !AT.low;
-    AT.high := if !AT.high_next then U8.succ !AT.high else !AT.high
+    AT.high := if !AT.high_next then U8.succ !AT.high else !AT.high;
+    for i = 0 to 7 do
+      (* sprite is active *)
+      if OAM.counters.(i) = 0u then (
+        let low, high = OAM.render_shifters.(i) in
+        shift1_8 low; shift1_8 high
+      )
+    done
 
   let data_fetching disp render =
     (* Cycle 0 : IDLE *)
@@ -407,9 +447,10 @@ module Rendering = struct
       if render && (!cycle > 8 || !Graphics.background_leftmost) then (
         render_pixel disp
       );
-      shift_registers ()
+      shift_registers ();
+      decrease_sprite_counters ()
     )
-    (* Cycles 257 - 320 : NEXT SPRITES FETCHING *)
+    (* Cycles 257 - 320 : NEXT SPRITES FETCHING in another function *)
     else if !cycle <= 320 then (
       (* If rendering is enabled, the PPU copies all bits related to
        * horizontal position from t to v *)
@@ -418,7 +459,6 @@ module Rendering = struct
         Mem.address :=
           copy_bits_16 ~src:!Mem.temp_address ~dst:!Mem.address 0x41FU
       )
-      (* TODO sprites *)
     )
     (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
     else if !cycle <= 336 && !Graphics.background then (
@@ -472,8 +512,13 @@ module Rendering = struct
     let fetch_tile ~high =
       let index = get_oam'_byte sn 1 in
       let bank = if nth_bit index 0 then 0x1000U else 0x0U in
-      let offset = U8.(index $>> 1) |> U16.of_uint8 in
+      let offset = U8.(index $& ?~1u) |> U16.of_uint8 in
       let addr = pat_address ~bank ~offset in
+      (*
+      if OAM.counters.(sn) <> 0xffu then (
+        Printf.printf "Index: %X Address: %X\n" (U8.to_int index) (U16.to_int addr)
+      );
+         *)
       let addr = if high then U16.(addr + 8U) else addr in
       get_ppu addr
     in
@@ -482,6 +527,14 @@ module Rendering = struct
     | 3 -> OAM.counters.(sn) <- get_oam'_byte sn 3
     | 4 -> (fst OAM.render_shifters.(sn)) := fetch_tile ~high:false
     | 6 -> (snd OAM.render_shifters.(sn)) := fetch_tile ~high:true
+    | 7 when OAM.counters.(sn) <> 0xffu ->
+      (*
+      Printf.printf "Y %d X %d AT %X PATL %X PATH %X\n%!"
+        !scanline (U8.to_int OAM.counters.(sn))
+        (U8.to_int OAM.latches.(sn))
+        (U8.to_int !(fst OAM.render_shifters.(sn)))
+        (U8.to_int !(snd OAM.render_shifters.(sn)))
+         *) ()
     | _ -> ()
 
   let sprite_fetching () =
@@ -499,8 +552,15 @@ module Rendering = struct
       sprite_evaluation ();
     )
     (* Cycles 257-320: sprite tile fetching *)
-    else if !cycle <= 320 then
+    else if !cycle <= 320 then (
+      (*
+      if !cycle = 257 then (
+        Printf.printf "Scanline %d sprites %d\n%!"
+          !scanline (!OAM.next_open_slot / 4)
+      );
+         *)
       fetch_sprite ()
+    )
     (* Cycles 321-340: IDLE *)
     else ()
 
