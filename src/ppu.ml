@@ -423,8 +423,12 @@ module Rendering = struct
     match U8.(?% pat, ?% spat, priority) with
     | _, 0, _ -> draw_pixel disp x y 0x3F00U ~pal ~pat
     | 0, _, _ -> draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
-    | _, _, false -> draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
-    | _, _, true -> draw_pixel disp x y 0x3F00U ~pal ~pat
+    | _, _, false ->
+      Status.sprite_0_hit := true;
+      draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
+    | _, _, true ->
+      Status.sprite_0_hit := true;
+      draw_pixel disp x y 0x3F00U ~pal ~pat
 
   let shift_registers () =
     shift1_16 BG.low ;
