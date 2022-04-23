@@ -21,7 +21,6 @@ let palette =
      0xFCFCFC; 0xA4E4FC; 0xB8B8F8; 0xD8B8F8; 0xF8B8F8; 0xF8A4C0; 0xF0D0B0; 0xFCE0A8;
      0xF8D878; 0xD8F878; 0xB8F8B8; 0xB8F8D8; 0x00FCFC; 0xF8D8F8; 0x000000; 0x000000]
 
-
 module State = struct
 
   module Mem = struct
@@ -35,13 +34,28 @@ module State = struct
     let address = ref 0u
 
     let primary = Array.make 0x100 0u
-    let seconday = Array.make 0x20 0u
+    let secondary = Array.make 0x20 0u
+    let next_open_slot = ref 0
     (* Contain pattern table data *)
     let _render_shifters = Array.init 8 (fun _ -> (ref 0u, ref 0u))
     (* Contain attribute bytes *)
     let _latches = Array.make 8 0u
     (* Contain X positions *)
     let _counters = Array.make 8 0u
+
+    (* Fetching state machine *)
+    module SM = struct
+      type t =
+        | Sleep of t (* rest 1 cycle, remember next state *)
+        | CopyY (* read a sprite's Y-coordinate (OAM[n][0], copying it to the
+                   next open slot in secondary OAM *)
+        | CopyRest of int (* copy remaining bytes OAM[n[1] thru OAM[n][3] *)
+        | OverflowDetection of int (* buggy overflow detection loop *)
+        | Full (* do not copy anything, increment n *)
+
+      let state = ref CopyY
+      let n = ref 0
+    end
   end
 
   (* Control register *)
@@ -408,14 +422,57 @@ module Rendering = struct
     (* Cycles 337-340 : USELESS *)
     else ()
 
+  let get_oam_byte n m = OAM.primary.(4 * n + m)
+
+  let y_in_range y_pos =
+    (* TODO account for 16px sprites? *)
+    let y_pos = U8.to_int y_pos in
+    y_pos <= !scanline && !scanline < y_pos + 8
+
+  let sprite_evaluation () =
+    let open OAM in
+    let set_next s = SM.state := Sleep s in
+    let decide_next () =
+      if !SM.n = 0 then SM.Full
+      else if !next_open_slot >= 32 then SM.CopyY
+      else SM.OverflowDetection 0
+    in
+    match !SM.state with
+    | Sleep next -> SM.state := next
+    | CopyY ->
+      let y_pos = get_oam_byte !SM.n 0 in
+      secondary.(!next_open_slot) <- y_pos;
+      if y_in_range y_pos then (
+        incr next_open_slot;
+        set_next (CopyRest 1)
+      ) else (
+        SM.n := !SM.n land 0x3f;
+        set_next (decide_next ())
+      )
+    | CopyRest m ->
+      secondary.(!next_open_slot) <- get_oam_byte !SM.n m;
+      incr next_open_slot;
+      if m = 3 then (
+        SM.n := !SM.n land 0x3f;
+        set_next (decide_next ())
+      ) else set_next (CopyRest (m + 1))
+    | OverflowDetection _ -> () (* TODO *)
+    | Full -> ()
+
   let sprite_fetching () =
     (* Cycle 0: IDLE *)
     if !cycle = 0 then ()
     (* Cycles 1-64: clear OAM' *)
     else if !cycle <= 64 && !cycle mod 2 = 0 then
-      OAM.seconday.((!cycle - 1) / 2) <- 0xFFu
+      OAM.secondary.((!cycle - 1) / 2) <- 0xFFu
     (* Cycles 65-256: sprite evaluation *)
-    else if !cycle <= 256 then ()
+    else if !cycle <= 256 then (
+      if !cycle = 65 then (
+        OAM.SM.state := CopyY;
+        OAM.next_open_slot := 0
+      );
+      sprite_evaluation ();
+    )
     else ()
 
   let next_cycle disp =
