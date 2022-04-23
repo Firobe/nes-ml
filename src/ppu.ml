@@ -37,11 +37,11 @@ module State = struct
     let secondary = Array.make 0x20 0u
     let next_open_slot = ref 0
     (* Contain pattern table data *)
-    let _render_shifters = Array.init 8 (fun _ -> (ref 0u, ref 0u))
+    let render_shifters = Array.init 8 (fun _ -> (ref 0u, ref 0u))
     (* Contain attribute bytes *)
-    let _latches = Array.make 8 0u
+    let latches = Array.make 8 0u
     (* Contain X positions *)
-    let _counters = Array.make 8 0u
+    let counters = Array.make 8 0u
 
     (* Fetching state machine *)
     module SM = struct
@@ -323,12 +323,12 @@ module Rendering = struct
       v := (!v $& ?~0x03E0U) $| (!y $<< 5);
     )
 
-  let bg_address () =
+  let pat_address ~bank ~offset =
     let open U16 in
     let v = !Mem.address in
+    let offset = offset * 16U in
     let finey = (v $& 0x7000U) $>> 12 in
-    let tile_offset = ?$ !NT.next * 16U in
-    !Control.background_pattern_address + tile_offset + finey
+    bank + offset + finey
 
   let fetch_next_data () =
     (* Step number in the fetching process *)
@@ -362,9 +362,15 @@ module Rendering = struct
         let shift = ?% ((0x04U $& (v $>> 4)) $| (v $& 0x02U)) in
         AT.next := U8.(?$$) (0x3U $& (data $>> shift))
       | 5 -> (* load low BG tile byte to next_bg_low (pattern table) *)
-        BG.next_low := get_ppu (bg_address ())
+        let offset = ?$ !NT.next in
+        let addr = pat_address ~bank:!Control.background_pattern_address ~offset
+        in
+        BG.next_low := get_ppu addr
       | 7 -> (* load high BG tile byte to next_bg_high *)
-        BG.next_high := get_ppu (bg_address () + 8U)
+        let offset = ?$ !NT.next in
+        let addr = pat_address ~bank:!Control.background_pattern_address ~offset
+        in
+        BG.next_high := get_ppu (addr + 8U)
       | _ -> ()
     end
 
@@ -459,6 +465,25 @@ module Rendering = struct
     | OverflowDetection _ -> () (* TODO *)
     | Full -> ()
 
+  let fetch_sprite () =
+    let get_oam'_byte n m = OAM.secondary.(4 * n + m) in
+    let sn = (!cycle - 257) / 8 in
+    let step = (!cycle - 257) mod 8 in
+    let fetch_tile ~high =
+      let index = get_oam'_byte sn 1 in
+      let bank = if nth_bit index 0 then 0x1000U else 0x0U in
+      let offset = U8.(index $>> 1) |> U16.of_uint8 in
+      let addr = pat_address ~bank ~offset in
+      let addr = if high then U16.(addr + 8U) else addr in
+      get_ppu addr
+    in
+    match step with
+    | 2 -> OAM.latches.(sn) <- get_oam'_byte sn 2
+    | 3 -> OAM.counters.(sn) <- get_oam'_byte sn 3
+    | 4 -> (fst OAM.render_shifters.(sn)) := fetch_tile ~high:false
+    | 6 -> (snd OAM.render_shifters.(sn)) := fetch_tile ~high:true
+    | _ -> ()
+
   let sprite_fetching () =
     (* Cycle 0: IDLE *)
     if !cycle = 0 then ()
@@ -473,6 +498,10 @@ module Rendering = struct
       );
       sprite_evaluation ();
     )
+    (* Cycles 257-320: sprite tile fetching *)
+    else if !cycle <= 320 then
+      fetch_sprite ()
+    (* Cycles 321-340: IDLE *)
     else ()
 
   let next_cycle disp =
