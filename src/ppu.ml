@@ -388,7 +388,7 @@ module Rendering = struct
 
   let sprite_pixel () =
     let found = ref false in
-    let color = ref (0u, 0u) in
+    let color = ref (0u, 0u, false) in
     for i = 0 to 7 do
       (* sprite is active *)
       if (not !found) && OAM.counters.(i) = 0u then (
@@ -399,7 +399,8 @@ module Rendering = struct
         if pat <> 0u then (
           found := true;
           let pal = U8.(OAM.latches.(i) $& 0x3u) in
-          color := (pat, pal)
+          let priority = nth_bit OAM.latches.(i) 5 in
+          color := (pat, pal, priority)
         )
         else ()
       )
@@ -418,9 +419,12 @@ module Rendering = struct
     in
     let x = of_int Stdlib.(!cycle - 1) in
     let y = of_int !scanline in
-    draw_pixel disp x y 0x3F00U ~pal ~pat;
-    let pat, pal = sprite_pixel () in
-    draw_pixel disp x y 0x3F10U ~pal ~pat
+    let spat, spal, priority = sprite_pixel () in
+    match U8.(?% pat, ?% spat, priority) with
+    | _, 0, _ -> draw_pixel disp x y 0x3F00U ~pal ~pat
+    | 0, _, _ -> draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
+    | _, _, false -> draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
+    | _, _, true -> draw_pixel disp x y 0x3F00U ~pal ~pat
 
   let shift_registers () =
     shift1_16 BG.low ;
