@@ -1,0 +1,3 @@
+(env
+ (_
+  (ocamlopt_flags (:standard -O3))))
