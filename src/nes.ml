@@ -15,6 +15,20 @@ type disps = {
   debug : (Ppu.Debug.t option) ref
 }
 
+module FPS = struct
+  let last_frame = ref 0
+  let next_time = ref 0.
+  let check () =
+    let now = Sys.time () in
+    if now >= !next_time then (
+      let new_frame = !Ppu.State.Rendering.frame in
+      let diff = new_frame - !last_frame in
+      Printf.printf "FPS: %d\n%!" diff;
+      last_frame := new_frame;
+      next_time := now +. 1.
+    )
+end
+
 let main_loop disps cpu limit =
   let module NesCpu = (val cpu : C6502.CPU) in
   let rec aux frame limit _sup_cycle =
@@ -28,6 +42,7 @@ let main_loop disps cpu limit =
         | Some d -> Ppu.Debug.delete d; disps.debug := None
         | None -> ()
       );
+      FPS.check ();
       (* NesCpu.print_state (); *)
       let old = !NesCpu.cycle_count in
       NesCpu.fetch_instr ();

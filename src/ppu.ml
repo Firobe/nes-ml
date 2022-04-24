@@ -74,7 +74,7 @@ module State = struct
     let background_leftmost = ref false
     let sprites_leftmost = ref false
     let background = ref false
-    let show_sprites = ref false
+    let sprites = ref false
     let emph_red = ref false
     let emph_green = ref false
     let emph_blue = ref false
@@ -125,7 +125,7 @@ end
 
 open State
 
-let is_rendering () = !Graphics.background || !Graphics.show_sprites
+let is_rendering () = !Graphics.background || !Graphics.sprites
 
 let read_latch () =
   let r = !latch in
@@ -180,7 +180,7 @@ let set_register register (v : U8.t) =
     Graphics.background_leftmost := nth_bit v 1;
     Graphics.sprites_leftmost := nth_bit v 2;
     Graphics.background := nth_bit v 3;
-    Graphics.show_sprites := nth_bit v 4;
+    Graphics.sprites := nth_bit v 4;
     Graphics.emph_red := nth_bit v 5;
     Graphics.emph_green := nth_bit v 6;
     Graphics.emph_blue := nth_bit v 7
@@ -374,7 +374,7 @@ module Rendering = struct
   let sprite_pixel () =
     let found = ref false in
     let color = ref (0u, 0u, false) in
-    if !Graphics.show_sprites then (
+    if !Graphics.sprites then (
       for i = 0 to 7 do
         (* sprite is active *)
         if (not !found) && OAM.counters.(i) = 0u then (

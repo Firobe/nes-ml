@@ -4,6 +4,9 @@ module State : sig
   module Mem : sig
     val main : uint8 array
   end
+  module Rendering : sig
+    val frame : int ref
+  end
 end
 
 val get_register : int -> uint8
