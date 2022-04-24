@@ -393,7 +393,7 @@ module Rendering = struct
       (* sprite is active *)
       if (not !found) && OAM.counters.(i) = 0u then (
         let low, high = OAM.render_shifters.(i) in
-        let scroll = 7 - U8.to_int !fine_x_scroll in
+        let scroll = 7 in
         let pat = combine8 ~low:U8.(!low $>> scroll) ~high:U8.(!high $>> scroll) in
         (* opaque pixel *)
         if pat <> 0u then (
@@ -483,12 +483,23 @@ module Rendering = struct
     let y_pos = U8.to_int y_pos in
     y_pos <= !scanline && !scanline < y_pos + 8
 
+  let _disp_state = function
+    | OAM.SM.Sleep _ -> Printf.printf "Sleep\n"
+    | CopyY -> Printf.printf "CopyY\n"
+    | CopyRest m -> Printf.printf "CopyRest %d\n" m
+    | OverflowDetection _ -> Printf.printf "OverflowDetection\n"
+    | Full -> Printf.printf "Full\n"
+
   let sprite_evaluation () =
     let open OAM in
+    (*
+    Printf.printf "N = %d state = " !SM.n;
+    disp_state !OAM.SM.state;
+       *)
     let set_next s = SM.state := Sleep s in
     let decide_next () =
       if !SM.n = 0 then SM.Full
-      else if !next_open_slot >= 32 then SM.CopyY
+      else if !next_open_slot < 32 then SM.CopyY
       else SM.OverflowDetection 0
     in
     match !SM.state with
@@ -496,18 +507,19 @@ module Rendering = struct
     | CopyY ->
       let y_pos = get_oam_byte !SM.n 0 in
       secondary.(!next_open_slot) <- y_pos;
+      (*Printf.printf "OAM N %d Y %d\n%!" !SM.n (U8.to_int y_pos);*)
       if y_in_range y_pos then (
         incr next_open_slot;
         set_next (CopyRest 1)
       ) else (
-        SM.n := !SM.n land 0x3f;
+        SM.n := (!SM.n + 1) land 0x3f;
         set_next (decide_next ())
       )
     | CopyRest m ->
       secondary.(!next_open_slot) <- get_oam_byte !SM.n m;
       incr next_open_slot;
       if m = 3 then (
-        SM.n := !SM.n land 0x3f;
+        SM.n := (!SM.n + 1) land 0x3f;
         set_next (decide_next ())
       ) else set_next (CopyRest (m + 1))
     | OverflowDetection _ -> () (* TODO *)
@@ -562,7 +574,8 @@ module Rendering = struct
     else if !cycle <= 256 then (
       if !cycle = 65 then (
         OAM.SM.state := CopyY;
-        OAM.next_open_slot := 0
+        OAM.next_open_slot := 0;
+        OAM.SM.n := 0
       );
       sprite_evaluation ();
     )
