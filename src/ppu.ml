@@ -469,9 +469,9 @@ module Rendering = struct
   let get_oam_byte n m = OAM.primary.(4 * n + m)
 
   let y_in_range y_pos =
-    (* TODO account for 16px sprites? *)
+    let offset = if !Control.sprite_size then 16 else 8 in
     let y_pos = U8.to_int y_pos in
-    y_pos <= !scanline && !scanline < y_pos + 8
+    y_pos <= !scanline && !scanline < y_pos + offset
 
   let sprite_evaluation () =
     let open OAM in
@@ -508,7 +508,7 @@ module Rendering = struct
     let sn = (!cycle - 257) / 8 in
     let step = (!cycle - 257) mod 8 in
     let enabled = sn < (!OAM.next_open_slot / 4) in
-    let fetch_tile ~high =
+    let fetch_tile_8 ~high =
       let y_pos = get_oam'_byte sn 0 in
       let fine_offset = U16.(?@ !scanline - ?$ y_pos) in
       (* Flip vertically *)
@@ -517,13 +517,9 @@ module Rendering = struct
         else fine_offset
       in
       let index = get_oam'_byte sn 1 in
-      let bank, offset =
-        if !Control.sprite_size then (
-          (if nth_bit index 0 then 0x1000U else 0x0U),
-          U8.(index $& ?~1u) |> U16.of_uint8
-        ) else (!Control.sprite_pattern_address, U16.of_uint8 index)
-      in
+      let bank = !Control.sprite_pattern_address in
       let open U16 in
+      let offset = of_uint8 index in
       let offset = offset * 16U in
       let addr = bank + offset + fine_offset in
       let addr = if high then U16.(addr + 8U) else addr in
@@ -531,11 +527,30 @@ module Rendering = struct
       (* Flip horizontally *)
       if nth_bit OAM.latches.(sn) 6 then reverse_byte data else data
     in
+    let fetch_tile_16 ~high =
+      let y_pos = get_oam'_byte sn 0 in
+      let row = !scanline - U8.(?% y_pos) in
+      let vert_flip = nth_bit OAM.latches.(sn) 7 in
+      let tile_nb = if row < 8 <> vert_flip then 0U else 1U in
+      let y_offset = U16.(?@ (row mod 8)) in
+      let y_offset = if vert_flip then U16.(7U - y_offset) else y_offset in
+      let index = get_oam'_byte sn 1 in
+      let bank = if nth_bit index 0 then 0x1000U else 0x0U in
+      let index' = U16.((U8.(index $& ?~1u) |> U16.of_uint8) + tile_nb) in
+      let offset = U16.(index' * 16U) in
+      let open U16 in
+      let addr = bank + offset + y_offset in
+      let addr = if high then U16.(addr + 8U) else addr in
+      let data = get_ppu addr in
+      (* Flip horizontally *)
+      if nth_bit OAM.latches.(sn) 6 then reverse_byte data else data
+    in
+    let fetch = if !Control.sprite_size then fetch_tile_16 else fetch_tile_8 in
     match step with
     | 2 -> OAM.latches.(sn) <- get_oam'_byte sn 2
     | 3 -> OAM.counters.(sn) <- get_oam'_byte sn 3
-    | 4 when enabled -> (fst OAM.render_shifters.(sn)) := fetch_tile ~high:false
-    | 6 when enabled -> (snd OAM.render_shifters.(sn)) := fetch_tile ~high:true
+    | 4 when enabled -> (fst OAM.render_shifters.(sn)) := fetch ~high:false
+    | 6 when enabled -> (snd OAM.render_shifters.(sn)) := fetch ~high:true
     | 4 -> (fst OAM.render_shifters.(sn)) := 0u
     | 6 -> (fst OAM.render_shifters.(sn)) := 0u
     | _ -> ()
