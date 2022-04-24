@@ -125,6 +125,8 @@ end
 
 open State
 
+let is_rendering () = !Graphics.background || !Graphics.show_sprites
+
 let read_latch () =
   let r = !latch in
   latch := not !latch;
@@ -372,36 +374,40 @@ module Rendering = struct
   let sprite_pixel () =
     let found = ref false in
     let color = ref (0u, 0u, false) in
-    for i = 0 to 7 do
-      (* sprite is active *)
-      if (not !found) && OAM.counters.(i) = 0u then (
-        let low, high = OAM.render_shifters.(i) in
-        let scroll = 7 in
-        let pat = combine8 ~low:U8.(!low $>> scroll) ~high:U8.(!high $>> scroll) in
-        (* opaque pixel *)
-        if pat <> 0u then (
-          found := true;
-          let pal = U8.(OAM.latches.(i) $& 0x3u) in
-          let priority = nth_bit OAM.latches.(i) 5 in
-          color := (pat, pal, priority)
+    if !Graphics.show_sprites then (
+      for i = 0 to 7 do
+        (* sprite is active *)
+        if (not !found) && OAM.counters.(i) = 0u then (
+          let low, high = OAM.render_shifters.(i) in
+          let scroll = 7 in
+          let pat = combine8 ~low:U8.(!low $>> scroll) ~high:U8.(!high $>> scroll) in
+          (* opaque pixel *)
+          if pat <> 0u then (
+            found := true;
+            let pal = U8.(OAM.latches.(i) $& 0x3u) in
+            let priority = nth_bit OAM.latches.(i) 5 in
+            color := (pat, pal, priority)
+          )
         )
-        else ()
-      )
-    done;
-    !color
+      done
+    ); !color
 
   let render_pixel disp =
-    let scroll1 = 15 - U8.to_int !fine_x_scroll in
-    let scroll2 = 7 - U8.to_int !fine_x_scroll in
-    let open U16 in
-    let patl = (!BG.low $>> scroll1) $& 0x1U in
-    let path = (!BG.high $>> scroll1) $& 0x1U in
-    let pat = U8.(?$$) (patl $| (path $<< 1)) in
-    let open U8 in
-    let pal = combine8 ~low:(!AT.low $>> scroll2) ~high:(!AT.high $>> scroll2)
+    let x = U8.of_int (!cycle - 1) in
+    let y = U8.of_int !scanline in
+    let pat, pal = if !Graphics.background then
+      let scroll1 = 15 - U8.to_int !fine_x_scroll in
+      let scroll2 = 7 - U8.to_int !fine_x_scroll in
+      let open U16 in
+      let patl = (!BG.low $>> scroll1) $& 0x1U in
+      let path = (!BG.high $>> scroll1) $& 0x1U in
+      let pat = U8.(?$$) (patl $| (path $<< 1)) in
+      let open U8 in
+      let pal = combine8 ~low:(!AT.low $>> scroll2) ~high:(!AT.high $>> scroll2)
+      in
+      (pat, pal)
+      else (0u, 0u)
     in
-    let x = of_int Stdlib.(!cycle - 1) in
-    let y = of_int !scanline in
     let spat, spal, priority = sprite_pixel () in
     match U8.(?% pat, ?% spat, priority) with
     | _, 0, _ -> draw_pixel disp x y 0x3F00U ~pal ~pat
@@ -432,7 +438,7 @@ module Rendering = struct
     (* Cycle 0 : IDLE *)
     if !cycle = 0 then ()
     (* Cycles 1 - 256 : BACKGROUND FETCHING *)
-    else if !cycle <= 256 && !Graphics.background then (
+    else if !cycle <= 256 && is_rendering () then (
       fetch_next_data ();
       (* Pixel rendering *)
       if render && (!cycle > 8 || !Graphics.background_leftmost) then (
@@ -446,13 +452,13 @@ module Rendering = struct
       (* If rendering is enabled, the PPU copies all bits related to
        * horizontal position from t to v *)
       (* v: ....A.. ...BCDEF <- t: ....A.. ...BCDEF *)
-      if !cycle = 257 && !Graphics.background then (
+      if !cycle = 257 && is_rendering () then (
         Mem.address :=
           copy_bits_16 ~src:!Mem.temp_address ~dst:!Mem.address 0x41FU
       )
     )
     (* Cycles 321 - 336 : NEXT TWO TILES FETCHING *)
-    else if !cycle <= 336 && !Graphics.background then (
+    else if !cycle <= 336 && is_rendering () then (
       fetch_next_data () ;
       shift_registers ()
     )
@@ -585,7 +591,7 @@ module Rendering = struct
        *  the horizontal bits are copied from t to v at dot 257, the PPU
        *  will repeatedly copy the vertical bits from t to v from dots
        *  280 to 304, completing the full initialization of v from t: *)
-      if !cycle >= 280 && !cycle <= 304 && !Graphics.background then (
+      if !cycle >= 280 && !cycle <= 304 && is_rendering () then (
         Mem.address :=
           copy_bits_16 ~src:!Mem.temp_address ~dst:!Mem.address 0x7BE0U
       )
@@ -599,7 +605,7 @@ module Rendering = struct
         (*render_sprites false 0 ;*)
         (* this should be at cycle 1 *)
         (* Odd frame : jump to (0, 0) directly *)
-        if (!frame mod 2) = 1 && !Graphics.background then (
+        if (!frame mod 2) = 1 && is_rendering () then (
           scanline := 0;
           cycle := 0
         )
