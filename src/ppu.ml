@@ -361,8 +361,9 @@ module Rendering = struct
 
   let decrease_sprite_counters () =
     for i = 0 to 7 do
-      if OAM.counters.(i) > 0u then
-        OAM.counters.(i) <- U8.(OAM.counters.(i) - 1u)
+      let v = OAM.counters.(i) in
+      if v <> 0u then
+        OAM.counters.(i) <- U8.(pred v)
     done
 
   let combine8 ~low ~high =
