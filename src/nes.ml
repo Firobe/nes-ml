@@ -31,7 +31,7 @@ end
 
 let main_loop disps cpu limit =
   let module NesCpu = (val cpu : C6502.CPU) in
-  let rec aux frame limit _sup_cycle =
+  let rec aux frame limit sup_cycle =
     if frame mod 100 = 0 then (Input.get_inputs ());
     if frame <> limit && (Input.continue ()) then (
       if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
@@ -47,7 +47,7 @@ let main_loop disps cpu limit =
       let old = !NesCpu.cycle_count in
       NesCpu.fetch_instr ();
       let elapsed = !NesCpu.cycle_count - old in
-      (* n_times Apu.next_cycle ((elapsed + sup_cycle) / 2); *)
+      n_times Apu.next_cycle ((elapsed + sup_cycle) / 2);
       n_times (fun () -> Ppu.next_cycle disps.main) (elapsed * 3);
       Ppu.Debug.render !(disps.debug);
       aux (frame + 1) limit (elapsed mod 2)
@@ -70,7 +70,7 @@ let main =
     NesCpu.Register.set `P 0x34u ;
     NesCpu.PC.init () ;
     NesCpu.enable_decimal := false ;
-    (* Apu.init (); *)
+    (*Apu.init ();*)
     let cpu = (module NesCpu : C6502.CPU) in
     begin try
         main_loop disps cpu (-1) ;
@@ -79,7 +79,7 @@ let main =
           "The CPU encountered an invalid instruction %a at address %a.\n"
           C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
     end ;
-    (* Apu.exit (); *)
+    (*Apu.exit ();*)
     Ppu.exit main
   )
   else Printf.printf "No ROM provided\n"
