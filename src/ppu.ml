@@ -269,33 +269,6 @@ module Rendering = struct
       let color = get_ppu address in
       Display.set_pixel disp ~x:(U8.to_int x) ~y:(U8.to_int y) ~color
 
-  (*
-  let render_sprite nb f =
-    if !Control.sprite_size && not !sprite_warned then (
-      Printf.printf "Unsupported 8x16 sprites\n";
-      sprite_warned := true
-    ) ;
-    let ypos = oam.(nb) in
-    let xpos = oam.(nb + 3) in
-    let attributes = oam.(nb + 2) in
-    let tile_nb = oam.(nb + 1) in
-    let palette = U8.logand attributes 3u in
-    let flip_h = nth_bit attributes 6 in
-    let flip_v = nth_bit attributes 7 in
-    for y = 0 to 7 do
-      if U8.(ypos + (u8 y)) < 240u then
-        for x = 0 to 7 do
-          let x' = U8.(xpos + (u8 x)) in
-          let y' = U8.(ypos + (u8 y)) in
-          let fx = if flip_h then 7 - x else x in
-          let fy = if flip_v then 7 - y else y in
-          let color_nb = decode_chr !Control.sprite_pattern_address
-              tile_nb (u8 fx) (u8 fy) in
-          f x' y' 0x3F10U ~pal:palette ~pat:color_nb
-        done
-    done
-     *)
-
   let shift1_8 r = r := U8.(!r $<< 1)
   let shift1_16 r = r := U16.(!r $<< 1)
   let copy_bits_16 ~src ~dst mask =
@@ -493,19 +466,8 @@ module Rendering = struct
     let y_pos = U8.to_int y_pos in
     y_pos <= !scanline && !scanline < y_pos + 8
 
-  let _disp_state = function
-    | OAM.SM.Sleep _ -> Printf.printf "Sleep\n"
-    | CopyY -> Printf.printf "CopyY\n"
-    | CopyRest m -> Printf.printf "CopyRest %d\n" m
-    | OverflowDetection _ -> Printf.printf "OverflowDetection\n"
-    | Full -> Printf.printf "Full\n"
-
   let sprite_evaluation () =
     let open OAM in
-    (*
-    Printf.printf "N = %d state = " !SM.n;
-    disp_state !OAM.SM.state;
-       *)
     let set_next s = SM.state := Sleep s in
     let decide_next () =
       if !SM.n = 0 then SM.Full
@@ -517,7 +479,6 @@ module Rendering = struct
     | CopyY ->
       let y_pos = get_oam_byte !SM.n 0 in
       secondary.(!next_open_slot) <- y_pos;
-      (*Printf.printf "OAM N %d Y %d\n%!" !SM.n (U8.to_int y_pos);*)
       if y_in_range y_pos then (
         incr next_open_slot;
         set_next (CopyRest 1)
@@ -558,11 +519,6 @@ module Rendering = struct
       let open U16 in
       let offset = offset * 16U in
       let addr = bank + offset + fine_offset in
-      (*
-      if OAM.counters.(sn) <> 0xffu then (
-        Printf.printf "Index: %X Address: %X\n" (U8.to_int index) (U16.to_int addr)
-      );
-         *)
       let addr = if high then U16.(addr + 8U) else addr in
       let data = get_ppu addr in
       (* Flip horizontally *)
@@ -575,14 +531,6 @@ module Rendering = struct
     | 6 when enabled -> (snd OAM.render_shifters.(sn)) := fetch_tile ~high:true
     | 4 -> (fst OAM.render_shifters.(sn)) := 0u
     | 6 -> (fst OAM.render_shifters.(sn)) := 0u
-    | 7 when OAM.counters.(sn) <> 0xffu ->
-      (*
-      Printf.printf "Y %d X %d AT %X PATL %X PATH %X\n%!"
-        !scanline (U8.to_int OAM.counters.(sn))
-        (U8.to_int OAM.latches.(sn))
-        (U8.to_int !(fst OAM.render_shifters.(sn)))
-        (U8.to_int !(snd OAM.render_shifters.(sn)))
-         *) ()
     | _ -> ()
 
   let sprite_fetching () =
@@ -602,12 +550,6 @@ module Rendering = struct
     )
     (* Cycles 257-320: sprite tile fetching *)
     else if !cycle <= 320 then (
-      (*
-      if !cycle = 257 then (
-        Printf.printf "Scanline %d sprites %d\n%!"
-          !scanline (!OAM.next_open_slot / 4)
-      );
-         *)
       fetch_sprite ()
     )
     (* Cycles 321-340: IDLE *)
