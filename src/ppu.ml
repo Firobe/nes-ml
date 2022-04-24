@@ -132,6 +132,16 @@ let read_latch () =
 
 let int_of_bool b = if b then 1 else 0
 let nth_bit b n = U8.(b $& (1u $<< n) <> 0u)
+let reverse_byte b =
+  let cur = ref b in
+  let res = ref 0u in
+  let open U8 in
+  for _ = 1 to 8 do
+    res := !res + (!cur $& 1u);
+    cur := !cur $>> 1;
+    res := !res $<< 1;
+  done;
+  !res
 
 (* PPU memory address with redirections *)
 let address_indirection v =
@@ -533,9 +543,18 @@ module Rendering = struct
     let fetch_tile ~high =
       let y_pos = get_oam'_byte sn 0 in
       let fine_offset = U16.(?@ !scanline - ?$ y_pos) in
+      (* Flip vertically *)
+      let fine_offset = if nth_bit OAM.latches.(sn) 7 then
+          U16.(7U - fine_offset)
+        else fine_offset
+      in
       let index = get_oam'_byte sn 1 in
-      let bank = if nth_bit index 0 then 0x1000U else 0x0U in
-      let offset = U8.(index $& ?~1u) |> U16.of_uint8 in
+      let bank, offset =
+        if !Control.sprite_size then (
+          (if nth_bit index 0 then 0x1000U else 0x0U),
+          U8.(index $& ?~1u) |> U16.of_uint8
+        ) else (!Control.sprite_pattern_address, U16.of_uint8 index)
+      in
       let open U16 in
       let offset = offset * 16U in
       let addr = bank + offset + fine_offset in
@@ -545,7 +564,9 @@ module Rendering = struct
       );
          *)
       let addr = if high then U16.(addr + 8U) else addr in
-      get_ppu addr
+      let data = get_ppu addr in
+      (* Flip horizontally *)
+      if nth_bit OAM.latches.(sn) 6 then reverse_byte data else data
     in
     match step with
     | 2 -> OAM.latches.(sn) <- get_oam'_byte sn 2
