@@ -50,7 +50,7 @@ let mixer () =
 let callback buffer =
   let amplified = (mixer ()) *. volume in
   let toWrite = int_of_float amplified in
-  Printf.printf "%d %d\n%!" (Bigarray.Array1.dim buffer) toWrite;
+  (*Printf.printf "%d %d\n%!" (Bigarray.Array1.dim buffer) toWrite;*)
   for i = 0 to Bigarray.Array1.dim buffer - 1 do
     buffer.{i} <- toWrite
   done
