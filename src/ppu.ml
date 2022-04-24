@@ -137,9 +137,9 @@ let reverse_byte b =
   let res = ref 0u in
   let open U8 in
   for _ = 1 to 8 do
+    res := !res $<< 1;
     res := !res + (!cur $& 1u);
     cur := !cur $>> 1;
-    res := !res $<< 1;
   done;
   !res
 
