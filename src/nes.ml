@@ -32,7 +32,7 @@ end
 let main_loop disps cpu limit =
   let module NesCpu = (val cpu : C6502.CPU) in
   let rec aux frame limit _sup_cycle =
-    Input.get_inputs ();
+    if frame mod 100 = 0 then (Input.get_inputs ());
     if frame <> limit && (Input.continue ()) then (
       if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
         disps.debug := Some (Ppu.Debug.init ())
