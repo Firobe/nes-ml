@@ -271,8 +271,6 @@ module Rendering = struct
       let color = get_ppu address in
       Display.set_pixel disp ~x:(U8.to_int x) ~y:(U8.to_int y) ~color
 
-  let shift1_8 r = r := U8.(!r $<< 1)
-  let shift1_16 r = r := U16.(!r $<< 1)
   let copy_bits_16 ~src ~dst mask =
     let open U16 in
     let to_set = src $& mask in
@@ -368,9 +366,7 @@ module Rendering = struct
 
   let combine8 ~low ~high =
     let open U8 in
-    let l = low $& 1u in
-    let h = high $& 1u in
-    (h $<< 1) $| l
+    ((high $<< 1) $| (low $& 1u)) $& 3u
 
   let sprite_pixel () =
     let found = ref false in
@@ -421,17 +417,18 @@ module Rendering = struct
       draw_pixel disp x y 0x3F00U ~pal ~pat
 
   let shift_registers () =
-    shift1_16 BG.low ;
-    shift1_16 BG.high ;
-    shift1_8 AT.low ;
-    shift1_8 AT.high ;
-    AT.low := if !AT.low_next then U8.succ !AT.low else !AT.low;
-    AT.high := if !AT.high_next then U8.succ !AT.high else !AT.high;
+    BG.low := U16.(!BG.low $<< 1);
+    BG.high := U16.(!BG.high $<< 1);
+    AT.low := U8.(!AT.low $<< 1);
+    AT.high := U8.(!AT.high $<< 1);
+    AT.low := if !AT.low_next then U8.(!AT.low $| 1u) else !AT.low;
+    AT.high := if !AT.high_next then U8.(!AT.high $| 1u) else !AT.high;
     for i = 0 to 7 do
       (* sprite is active *)
       if OAM.counters.(i) = 0u then (
         let low, high = OAM.render_shifters.(i) in
-        shift1_8 low; shift1_8 high
+        low := U8.(!low $<< 1);
+        high := U8.(!high $<< 1);
       )
     done
 
