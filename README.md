@@ -6,7 +6,7 @@ Dependencies : `tsdl`, `extlib`, [`6502-ml`](https://github.com/Firobe/6502-ml)
 
 - Install `dune`
 - Run `dune build nes.exe`
-- The executable is in `_build/default`
+- The executable is in `_build/default/src`
 
 ## Usage
 
