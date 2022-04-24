@@ -41,7 +41,7 @@ let set_pixel t ~x ~y ~(color : uint8) =
   t.screen.{y * t.width + x} <- color
 
 let clear t back_color =
-  let rgb_color = t.palette.(Uint8.to_int back_color) in
+  let rgb_color = t.palette.(Uint8.to_int back_color mod 64) in
   Array1.fill t.screen rgb_color
 
 let render t =
