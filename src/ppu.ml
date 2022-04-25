@@ -44,6 +44,8 @@ module State = struct
     let counters = Array.make 8 0u
     (* True if on the current scanline, shifter 0 contains sprite 0 data *)
     let sprite_0_here = ref false
+    (* Number of spries to display this scanline, for optimization purposes *)
+    let last_sprite_this_scanline = ref 0
 
     (* Fetching state machine *)
     module SM = struct
@@ -360,25 +362,23 @@ module Rendering = struct
     end
 
   let decrease_sprite_counters () =
-    for i = 0 to 7 do
+    (* Opti *)
+    for i = 0 to !OAM.last_sprite_this_scanline do
       let v = OAM.counters.(i) in
       if v <> 0u then
         OAM.counters.(i) <- U8.(pred v)
     done
 
-  let combine8 ~low ~high =
-    let open U8 in
-    ((high $<< 1) $| (low $& 1u)) $& 3u
-
   let sprite_pixel () =
     let found = ref false in
     let color = ref (0u, 0u, false, false) in
-    for i = 0 to 7 do
+    for i = 0 to !OAM.last_sprite_this_scanline do
       (* sprite is active *)
       if (not !found) && OAM.counters.(i) = 0u then (
         let low, high = OAM.render_shifters.(i) in
         let scroll = 7 in
-        let pat = combine8 ~low:U8.(!low $>> scroll) ~high:U8.(!high $>> scroll) in
+        let pat =
+          U8.((((!high $>> scroll) $<< 1) $| ((!low $>> scroll) $& 1u)) $& 3u) in
         (* opaque pixel *)
         if pat <> 0u then (
           found := true;
@@ -401,7 +401,7 @@ module Rendering = struct
       let path = (!BG.high $>> scroll1) $& 0x1U in
       let pat = U8.(?$$) (patl $| (path $<< 1)) in
       let open U8 in
-      let pal = combine8 ~low:(!AT.low $>> scroll2) ~high:(!AT.high $>> scroll2)
+      let pal = (((!AT.high $>> scroll2) $<< 1) $| ((!AT.low $>> scroll2) $& 1u)) $& 3u
       in
       (pat, pal)
       else (0u, 0u)
@@ -426,7 +426,7 @@ module Rendering = struct
     AT.high := U8.(!AT.high $<< 1);
     AT.low := if !AT.low_next then U8.(!AT.low $| 1u) else !AT.low;
     AT.high := if !AT.high_next then U8.(!AT.high $| 1u) else !AT.high;
-    for i = 0 to 7 do
+    for i = 0 to !OAM.last_sprite_this_scanline do
       (* sprite is active *)
       if OAM.counters.(i) = 0u then (
         let low, high = OAM.render_shifters.(i) in
@@ -574,6 +574,7 @@ module Rendering = struct
     )
     (* Cycles 257-320: sprite tile fetching *)
     else if !cycle <= 320 then (
+      OAM.last_sprite_this_scanline := !OAM.next_open_slot / 4 - 1;
       fetch_sprite ()
     )
     (* Cycles 321-340: IDLE *)
