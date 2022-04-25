@@ -42,6 +42,8 @@ module State = struct
     let latches = Array.make 8 0u
     (* Contain X positions *)
     let counters = Array.make 8 0u
+    (* True if on the current scanline, shifter 0 contains sprite 0 data *)
+    let sprite_0_here = ref false
 
     (* Fetching state machine *)
     module SM = struct
@@ -370,7 +372,7 @@ module Rendering = struct
 
   let sprite_pixel () =
     let found = ref false in
-    let color = ref (0u, 0u, false) in
+    let color = ref (0u, 0u, false, false) in
     for i = 0 to 7 do
       (* sprite is active *)
       if (not !found) && OAM.counters.(i) = 0u then (
@@ -382,7 +384,7 @@ module Rendering = struct
           found := true;
           let pal = U8.(OAM.latches.(i) $& 0x3u) in
           let priority = nth_bit OAM.latches.(i) 5 in
-          color := (pat, pal, priority)
+          color := (pat, pal, priority, i = 0 && !OAM.sprite_0_here)
         )
       )
     done;
@@ -404,17 +406,17 @@ module Rendering = struct
       (pat, pal)
       else (0u, 0u)
     in
-    let spat, spal, priority = if !Graphics.sprites then sprite_pixel ()
-      else (0u, 0u, false)
+    let spat, spal, priority, sprite_0 =
+      if !Graphics.sprites then sprite_pixel () else (0u, 0u, false, false)
     in
     match U8.(?% pat, ?% spat, priority) with
     | _, 0, _ -> draw_pixel disp x y 0x3F00U ~pal ~pat
     | 0, _, _ -> draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
     | _, _, false ->
-      Status.sprite_0_hit := true;
+      if sprite_0 then (Status.sprite_0_hit := true);
       draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
     | _, _, true ->
-      Status.sprite_0_hit := true;
+      if sprite_0 then (Status.sprite_0_hit := true);
       draw_pixel disp x y 0x3F00U ~pal ~pat
 
   let shift_registers () =
@@ -485,6 +487,7 @@ module Rendering = struct
       let y_pos = get_oam_byte !SM.n 0 in
       secondary.(!next_open_slot) <- y_pos;
       if y_in_range y_pos then (
+        if !SM.n = 0 then sprite_0_here := true;
         incr next_open_slot;
         set_next (CopyRest 1)
       ) else (
@@ -564,7 +567,8 @@ module Rendering = struct
       if !cycle = 65 then (
         OAM.SM.state := CopyY;
         OAM.next_open_slot := 0;
-        OAM.SM.n := 0
+        OAM.SM.n := 0;
+        OAM.sprite_0_here := false;
       );
       sprite_evaluation ();
     )
