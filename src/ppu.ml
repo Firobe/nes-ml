@@ -580,6 +580,52 @@ module Rendering = struct
     (* Cycles 321-340: IDLE *)
     else ()
 
+  let pre_rendering disp =
+    (* Clear VBLANK *)
+    if !cycle = 1 then (
+      Status.vblank_enabled := false
+    );
+    (* Fetch data for next frame *)
+    sprite_fetching ();
+    data_fetching disp false;
+    (*  If rendering is enabled, at the end of vblank, shortly after
+     *  the horizontal bits are copied from t to v at dot 257, the PPU
+     *  will repeatedly copy the vertical bits from t to v from dots
+     *  280 to 304, completing the full initialization of v from t: *)
+    if !cycle >= 280 && !cycle <= 304 && is_rendering () then (
+      Mem.address :=
+        copy_bits_16 ~src:!Mem.temp_address ~dst:!Mem.address 0x7BE0U
+    )
+    (* Final dot : change everything *)
+    else if !cycle = 340 then (
+      Status.sprite_0_hit := false ; 
+      incr frame ;
+      (*render_sprites true 0 ;*)
+      Display.render disp;
+      Display.clear disp Mem.main.(0x3F00);
+      (*render_sprites false 0 ;*)
+      (* this should be at cycle 1 *)
+      (* Odd frame : jump to (0, 0) directly *)
+      if (!frame mod 2) = 1 && is_rendering () then (
+        scanline := 0;
+        cycle := 0
+      )
+    )
+
+  let increment_cycle () =
+    (* Next cycle *)
+    incr cycle;
+    if !cycle = 341 then (
+      cycle := 0;
+      (* Next scanline *)
+      incr scanline ;
+      if !scanline = 262 then (
+        (* End of frame *)
+        scanline := 0;
+      )
+    ) ;
+    Status.vbl_read := false
+
   let next_cycle disp =
     (* Process *)
     (* Visible scanlines : 0 - 239 *)
@@ -598,50 +644,8 @@ module Rendering = struct
     (* Last vertical blanking lines : IDLE *)
     else if !scanline <= 260 then ()
     (* Pre-rendering scanline *)
-    else (
-      (* Clear VBLANK *)
-      if !cycle = 1 then (
-        Status.vblank_enabled := false
-      );
-      (* Fetch data for next frame *)
-      sprite_fetching ();
-      data_fetching disp false;
-      (*  If rendering is enabled, at the end of vblank, shortly after
-       *  the horizontal bits are copied from t to v at dot 257, the PPU
-       *  will repeatedly copy the vertical bits from t to v from dots
-       *  280 to 304, completing the full initialization of v from t: *)
-      if !cycle >= 280 && !cycle <= 304 && is_rendering () then (
-        Mem.address :=
-          copy_bits_16 ~src:!Mem.temp_address ~dst:!Mem.address 0x7BE0U
-      )
-      (* Final dot : change everything *)
-      else if !cycle = 340 then (
-        Status.sprite_0_hit := false ; 
-        incr frame ;
-        (*render_sprites true 0 ;*)
-        Display.render disp;
-        Display.clear disp Mem.main.(0x3F00);
-        (*render_sprites false 0 ;*)
-        (* this should be at cycle 1 *)
-        (* Odd frame : jump to (0, 0) directly *)
-        if (!frame mod 2) = 1 && is_rendering () then (
-          scanline := 0;
-          cycle := 0
-        )
-      )
-    ) ;
-    (* Next cycle *)
-    incr cycle;
-    if !cycle = 341 then (
-      cycle := 0;
-      (* Next scanline *)
-      incr scanline ;
-      if !scanline = 262 then (
-        (* End of frame *)
-        scanline := 0;
-      )
-    ) ;
-    Status.vbl_read := false
+    else (pre_rendering disp);
+    increment_cycle ()
 end
 
 let init ic mm =
