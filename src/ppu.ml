@@ -371,23 +371,22 @@ module Rendering = struct
   let sprite_pixel () =
     let found = ref false in
     let color = ref (0u, 0u, false) in
-    if !Graphics.sprites then (
-      for i = 0 to 7 do
-        (* sprite is active *)
-        if (not !found) && OAM.counters.(i) = 0u then (
-          let low, high = OAM.render_shifters.(i) in
-          let scroll = 7 in
-          let pat = combine8 ~low:U8.(!low $>> scroll) ~high:U8.(!high $>> scroll) in
-          (* opaque pixel *)
-          if pat <> 0u then (
-            found := true;
-            let pal = U8.(OAM.latches.(i) $& 0x3u) in
-            let priority = nth_bit OAM.latches.(i) 5 in
-            color := (pat, pal, priority)
-          )
+    for i = 0 to 7 do
+      (* sprite is active *)
+      if (not !found) && OAM.counters.(i) = 0u then (
+        let low, high = OAM.render_shifters.(i) in
+        let scroll = 7 in
+        let pat = combine8 ~low:U8.(!low $>> scroll) ~high:U8.(!high $>> scroll) in
+        (* opaque pixel *)
+        if pat <> 0u then (
+          found := true;
+          let pal = U8.(OAM.latches.(i) $& 0x3u) in
+          let priority = nth_bit OAM.latches.(i) 5 in
+          color := (pat, pal, priority)
         )
-      done
-    ); !color
+      )
+    done;
+    !color
 
   let render_pixel disp =
     let x = U8.of_int (!cycle - 1) in
@@ -405,7 +404,9 @@ module Rendering = struct
       (pat, pal)
       else (0u, 0u)
     in
-    let spat, spal, priority = sprite_pixel () in
+    let spat, spal, priority = if !Graphics.sprites then sprite_pixel ()
+      else (0u, 0u, false)
+    in
     match U8.(?% pat, ?% spat, priority) with
     | _, 0, _ -> draw_pixel disp x y 0x3F00U ~pal ~pat
     | 0, _, _ -> draw_pixel disp x y 0x3F10U ~pal:spal ~pat:spat
