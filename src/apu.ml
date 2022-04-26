@@ -122,6 +122,75 @@ module Pulse = struct
     else 0
 end
 
+module Triangle = struct
+  let sequence = [|
+    15; 14; 13; 12; 11; 10;  9;  8;  7;  6;  5;  4;  3;  2;  1;  0;
+    0;  1;  2;  3;  4;  5;  6;  7;  8;  9; 10; 11; 12; 13; 14; 15
+  |]
+
+  type t = {
+    mutable enabled : bool;
+    timer : Divider.t;
+    sequencer : Sequencer.t;
+    length : Length_counter.t;
+    linear_counter : Counter.t;
+    mutable linear_reload : int;
+    mutable control : bool
+  }
+
+  let create () = {
+    enabled = false;
+    timer = Divider.create 0;
+    sequencer = Sequencer.create 32;
+    linear_counter = Counter.create ();
+    length = Length_counter.create ();
+    linear_reload = 0;
+    control = false
+  }
+
+  let active t = Length_counter.active t.length
+
+  let update t v =
+    t.enabled <- v;
+    if not t.enabled then Length_counter.reset t.length 
+
+  let write_linear t v =
+    let value = v land 0x7F in
+    let control = (v land 0x80) <> 0 in
+    t.linear_reload <- value;
+    Counter.load t.linear_counter value;
+    Length_counter.update t.length control;
+    t.control <- control
+
+  let write_a t v =
+    let new_length = (t.timer.length land 0x700) lor v in
+    Divider.set_length t.timer new_length
+
+  let write_b t v =
+    let new_length = (t.timer.length land 0xFF) lor ((v land 0x7) lsl 8) in
+    Divider.set_length t.timer new_length;
+    Length_counter.load t.length (v lsr 3);
+    Sequencer.reset t.sequencer;
+    t.linear_counter.halt <- false
+
+  let clock t =
+    if Divider.clock t.timer && Counter.active t.linear_counter
+       && Length_counter.active t.length then (
+      Sequencer.clock t.sequencer
+    )
+
+  let linear_frame_clock t =
+    if t.linear_counter.halt then
+      t.linear_counter.counter <- t.linear_reload
+    else (Counter.clock t.linear_counter);
+    if not t.control then Counter.update t.linear_counter false
+
+  let frame_clock t =
+    if t.enabled then (Length_counter.clock t.length)
+
+  let output t = sequence.(Sequencer.get t.sequencer)
+end
+
 module Frame_counter = struct
   module Event = struct
     type t = O | E | EL | ELF
@@ -155,16 +224,18 @@ module Frame_counter = struct
       (if mode then 5 else 4);
     Sequencer.clock t.sequencer
 
-  let action t (pulse1, pulse2) =
+  let action t (pulse1, pulse2, triangle) =
     let mode_array = if t.mode then mode2 else mode1 in
     let event = mode_array.(Sequencer.get t.sequencer) in
     if Event.is_e event then (
-      (* TODO clock envelope and triangle linear counter *)
+      Triangle.linear_frame_clock triangle;
+      (* TODO clock envelope *)
     );
     if Event.is_l event then (
       (* clock length counters and sweep units TODO *)
       Pulse.frame_clock pulse1;
-      Pulse.frame_clock pulse2
+      Pulse.frame_clock pulse2;
+      Triangle.frame_clock triangle
     );
     t.frame_interrupt <- Event.is_f event
     (* TODO actually interrupt the CPU *)
@@ -192,6 +263,7 @@ module Make (A : AUDIO_BACKEND) : APU = struct
   let frame_counter = Frame_counter.create ()
   let pulse1 = Pulse.create ()
   let pulse2 = Pulse.create ()
+  let triangle = Triangle.create ()
 
   let cycle = ref 0
 
@@ -208,14 +280,18 @@ module Make (A : AUDIO_BACKEND) : APU = struct
     | 0x4005 -> Pulse.write1 pulse2 v
     | 0x4006 -> Pulse.write2 pulse2 v
     | 0x4007 -> Pulse.write3 pulse2 v
+    | 0x4008 -> Triangle.write_linear triangle v
+    | 0x400A -> Triangle.write_a triangle v
+    | 0x400B -> Triangle.write_b triangle v
     | 0x4015 -> (* status *)
       let e_pulse1 = (v land 0x1) <> 0 in
       let e_pulse2 = (v land 0x2) <> 0 in
-      let _e_triangle = (v land 0x4) <> 0 in
+      let e_triangle = (v land 0x4) <> 0 in
       let _e_noise = (v land 0x8) <> 0 in
       let _e_dmc = (v land 0x10) <> 0 in
       Pulse.update pulse1 e_pulse1;
       Pulse.update pulse2 e_pulse2;
+      Triangle.update triangle e_triangle
       (* TODO update other stuff *)
     | 0x4017 -> Frame_counter.write frame_counter v
     | _ -> ()
@@ -225,15 +301,16 @@ module Make (A : AUDIO_BACKEND) : APU = struct
       let iob n b = if b then 1 lsl n else 0 in
       let a_pulse1 = Pulse.active pulse1 |> iob 0 in
       let a_pulse2 = Pulse.active pulse1 |> iob 1 in
+      let a_triangle = Triangle.active triangle |> iob 2 in
       let interrupt = frame_counter.frame_interrupt |> iob 6 in
-      a_pulse1 lor a_pulse2 lor interrupt |> Stdint.Uint8.of_int
+      a_pulse1 lor a_pulse2 lor interrupt lor a_triangle |> Stdint.Uint8.of_int
       (* TODO other bits *)
     ) else failwith "Read invalid APU register"
 
   let mixer () =
     let pulse1 = (float_of_int @@ Pulse.output pulse1) in
     let pulse2 = (float_of_int @@ Pulse.output pulse2) in
-    let triangle = 0. in
+    let triangle = (float_of_int @@ Triangle.output triangle) in
     let noise = 0. in
     let dmc = 0. in
     let pulse_out = 95.88 /. (8128. /. (pulse1 +. pulse2) +. 100.) in
@@ -265,10 +342,11 @@ module Make (A : AUDIO_BACKEND) : APU = struct
     incr cycle;
     (* Clock pulse timers *)
     if !cycle mod 2 = 0 then (
-      Frame_counter.clock frame_counter (pulse1, pulse2);
+      Frame_counter.clock frame_counter (pulse1, pulse2, triangle);
       Pulse.clock pulse1;
       Pulse.clock pulse2
     );
+    Triangle.clock triangle;
     if !cycle mod sampling_period = 0 then push_samples ()
 
   let exit () = Sdl.close_audio_device A.device
