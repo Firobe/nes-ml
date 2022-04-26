@@ -27,9 +27,10 @@ module FPS = struct
     )
 end
 
-let main_loop disps cpu limit =
+let main_loop disps cpu apu limit =
   let module NesCpu = (val cpu : C6502.CPU) in
-  let rec aux frame limit sup_cycle =
+  let module NesApu = (val apu : Apu.APU) in
+  let rec aux frame limit =
     if frame mod 100 = 0 then (Input.get_inputs ());
     if frame <> limit && (Input.continue ()) then (
       if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
@@ -41,21 +42,22 @@ let main_loop disps cpu limit =
         | None -> ()
       );
       FPS.check ();
-      (* NesCpu.print_state (); *)
       let old = !NesCpu.cycle_count in
       NesCpu.fetch_instr ();
       let elapsed = !NesCpu.cycle_count - old in
-      n_times Apu.next_cycle ((elapsed + sup_cycle) / 2);
+      n_times NesApu.next_cycle elapsed;
       n_times (fun () -> Ppu.next_cycle disps.main) (elapsed * 3);
       Ppu.Debug.render !(disps.debug);
-      aux (frame + 1) limit (elapsed mod 2)
+      aux (frame + 1) limit
     )
-  in aux 0 limit 0
+  in aux 0 limit;
+  NesApu.exit ()
 
 let () =
   let open Rom_loader in
   if Array.length Sys.argv > 1 then (
-    let rom, pre_cpu = load_rom Sys.argv.(1) in
+    let apu = Apu.init () in
+    let rom, pre_cpu = load_rom apu Sys.argv.(1) in
     (* Create the CPU from the Mapper and ROM *)
     let module NesCpu = C6502.MakeCPU ((val pre_cpu : MAPPER) (struct let get = rom end)) in
     load_rom_memory rom;
@@ -68,16 +70,14 @@ let () =
     NesCpu.Register.set `P 0x34u ;
     NesCpu.PC.init () ;
     NesCpu.enable_decimal := false ;
-    (*Apu.init ();*)
     let cpu = (module NesCpu : C6502.CPU) in
     begin try
-        main_loop disps cpu (-1) ;
+        main_loop disps cpu apu (-1) ;
       with C6502.Invalid_instruction (addr, opcode) ->
         Format.printf
           "The CPU encountered an invalid instruction %a at address %a.\n"
           C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
     end ;
-    (*Apu.exit ();*)
     Ppu.exit main
   )
   else Printf.printf "No ROM provided\n"

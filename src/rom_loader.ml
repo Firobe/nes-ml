@@ -73,7 +73,7 @@ let is_in_cartridge_range addr = addr >= 0x8000U
 
 module type MAPPER = functor (R : ROM) -> C6502.MemoryMap
 
-module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
+module Make_NES_CPU (A : Apu.APU) (M : MAPPER) (R : ROM) = struct
   module C = M(R)
 
   let mem = Array.make 0x8000 0u (* Main memory *)
@@ -91,6 +91,8 @@ module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
     let a = address_mirroring a in
     if is_in_ppu_range a then
       Ppu.get_register (to_int (logand a 7U))
+    else if a = 0x4015U then
+      A.read_register a
     else if a = 0x4016U then
       Input.next_register ()
     else if is_in_cartridge_range a then
@@ -103,7 +105,7 @@ module Make_NES_CPU (M : MAPPER) (R : ROM) = struct
     if is_in_ppu_range a then
       Ppu.set_register (to_int (logand a 7U)) v
     else if is_in_apu_range a then
-      Apu.write_register v a
+      A.write_register v a
     else if a = 0x4014U then
       Ppu.dma read (?$ v $<< 8)
     else if is_in_cartridge_range a then
@@ -155,13 +157,14 @@ let mappers = [
   (2, (module UxROM))
 ]
 
-let load_rom path =
+let load_rom apu path =
   let rom = read_file path in
   let config = read_header rom in
   Printf.printf "Mapper %d\n" config.mapper_nb ;
   let prepared_cpu = match List.assoc_opt config.mapper_nb mappers with
     | None -> raise (Invalid_ROM "Unsupported mapper")
-    | Some x -> (module (Make_NES_CPU((val x : MAPPER))) : MAPPER)
+    | Some x ->
+      (module (Make_NES_CPU((val apu : Apu.APU))((val x : MAPPER))) : MAPPER)
   in
   Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
   Printf.printf "CHR ROM is %d bytes\n" config.chr_rom_size;
