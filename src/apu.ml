@@ -97,10 +97,12 @@ module Pulse = struct
   let write1 _ _ = ()
 
   let write2 t v =
-    Divider.set_length t.timer ((t.timer.length land 0x700) lor v)
+    let new_length = (t.timer.length land 0x700) lor v in
+    Divider.set_length t.timer new_length
 
   let write3 t v =
-    Divider.set_length t.timer ((t.timer.length land 0xFF) lor (v lsl 8));
+    let new_length = (t.timer.length land 0xFF) lor ((v land 0x7) lsl 8) in
+    Divider.set_length t.timer new_length;
     Length_counter.load t.length (v lsr 3);
     Sequencer.reset t.sequencer
 
@@ -114,12 +116,8 @@ module Pulse = struct
 
   let output t = 
     if t.timer.length >= 8 && Length_counter.active t.length then (
-      let r = 15 * duties.(t.duty_type).(Sequencer.get t.sequencer) in
-      (*
-      Printf.printf "Out T %d O %d S %d\n"
-        t.timer.length r (Sequencer.get t.sequencer);
-         *)
-      r
+      (* this should be the envelope instead of 15 TODO *)
+      15 * duties.(t.duty_type).(Sequencer.get t.sequencer)
     )
     else 0
 end
@@ -244,24 +242,24 @@ module Make (A : AUDIO_BACKEND) : APU = struct
     pulse_out +. tnd_out
 
   let push_samples () =
-    let volume = 255. in
-    let amplified = (mixer ()) *. volume in
-    let to_write = int_of_float amplified in
-    (*let to_write = ((!cycle / 50) mod 2) * 200 in*)
+    let value = mixer () in (* [0. - 1. ] *)
     (*
     if to_write <> 0 then (
       Printf.printf "Queued: %d %d\n" (Sdl.get_queued_audio_size A.device) to_write
     );
        *)
     let a = Bigarray.Array1.init
-        Bigarray.Int8_unsigned Bigarray.c_layout 1 (fun _ -> to_write) in
+        Bigarray.Float32 Bigarray.c_layout 1 (fun _ -> value) in
     match Sdl.queue_audio A.device a with
     | Ok () -> ()
     | Error (`Msg e) ->
       Printf.printf "Error when pushing samples: %s\n" e;
       assert false
 
-  let sampling_period = (cpu_freq / A.sampling)
+  (* to be adjusted dynamically *)
+  let sampling_period = 
+    (float_of_int cpu_freq) /. (float_of_int A.sampling)
+    |> int_of_float
 
   let next_cycle () =
     incr cycle;
@@ -284,7 +282,7 @@ let init () =
   | Ok () -> () ;
     let audio_spec = {
       Sdl.as_freq = 44100;
-      as_format = Sdl.Audio.u8;
+      as_format = Sdl.Audio.f32;
       as_channels = 1;
       as_silence = 0;
       as_samples = 1024;
