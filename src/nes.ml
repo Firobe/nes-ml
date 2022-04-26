@@ -1,5 +1,3 @@
-exception Crash
-
 let load_rom_memory rom =
   let open Rom_loader in
   Array.blit (Array.map C6502.Int_utils.u8 rom.chr_rom)
@@ -54,7 +52,7 @@ let main_loop disps cpu limit =
     )
   in aux 0 limit 0
 
-let main =
+let () =
   let open Rom_loader in
   if Array.length Sys.argv > 1 then (
     let rom, pre_cpu = load_rom Sys.argv.(1) in

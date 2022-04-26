@@ -13,7 +13,7 @@ depends: [
   "extlib"
   "stdint"
   "stdint-literals"
-  "dune" {>= "2.8" & build}
+  "dune" {>= "3.0" & build}
   "odoc" {with-doc}
 ]
 build: [
