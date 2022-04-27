@@ -7,6 +7,7 @@ Needs two unreleased libraries to be installed:
 ## Build & Install
 
 Run `opam install .` or just `dune build`. The executable name is simply `nes`.
+I recommend using a build with `flambda` activated for more performance.
 
 ## Usage
 
