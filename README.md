@@ -1,16 +1,16 @@
 # NES-ml
 
-Dependencies : `tsdl`, `extlib`, [`6502-ml`](https://github.com/Firobe/6502-ml)
+Needs two unreleased libraries to be installed:
+- separate CPU library: [`6502-ml`](https://github.com/Firobe/6502-ml)
+- fixed-size int literals: [`stdint-literals`](https://github.com/Firobe/ocaml-stdint-literals)
 
-## Build
+## Build & Install
 
-- Install `dune`
-- Run `dune build nes.exe`
-- The executable is in `_build/default/src`
+Run `opam install .` or just `dune build`. The executable name is simply `nes`.
 
 ## Usage
 
-Use : `nes.exe PATH_TO_ROM`
+Use : `nes PATH_TO_ROM`
 Hard-coded controls :
 - A : s
 - B : d
