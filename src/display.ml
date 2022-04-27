@@ -23,7 +23,8 @@ let create ~width ~height ~scale ~palette title =
   let s_width = scale * width in
   let s_height = scale * height in
   let window = sdl_get @@ Sdl.create_window ~w:s_width ~h:s_height title Sdl.Window.opengl in
-  let flags = Sdl.Renderer.(+) Sdl.Renderer.accelerated Sdl.Renderer.accelerated in
+  let flags = Sdl.Renderer.(+) Sdl.Renderer.accelerated
+      Sdl.Renderer.presentvsync in
   let renderer = sdl_get @@ Sdl.create_renderer ~flags window in
   let texture = sdl_get @@ Sdl.create_texture renderer Sdl.Pixel.format_rgb888
       Sdl.Texture.access_streaming ~w:width ~h:height in
