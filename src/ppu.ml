@@ -681,9 +681,6 @@ module Debug = struct
     Display.delete t.attributes;
     Display.delete t.patterns
 
-  let cooldown = 1000
-  let counter = ref 0
-
   let render_nametables disp =
     let set_nametable addr x_orig y_orig =
       for y = 0 to 29 do
@@ -757,6 +754,9 @@ module Debug = struct
     in
     set_pattern 0x0000 0 0;
     set_pattern 0x1000 128 0
+
+  let cooldown = 1000000
+  let counter = ref 0
 
   let render = function
     | None -> ()
