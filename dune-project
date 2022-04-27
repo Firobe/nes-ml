@@ -17,7 +17,6 @@
   (depends
     6502-ml
     tsdl
-    extlib
     stdint
     stdint-literals
     (dune :build)))
