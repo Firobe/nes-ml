@@ -268,75 +268,79 @@ module Frame_counter = struct
     )
 end
 
-module type AUDIO_BACKEND = sig
-  val device : int32 (* SDL playback device *)
-  val sampling : int (* Sampling rate of the device *)
-end
+module APU = struct
+  type audio_backend = {
+    device : int32;
+    sampling_freq : int;
+  }
 
-module type APU = sig
-  val next_cycle : unit -> unit
-  val write_register : Stdint.uint8 -> Stdint.uint16 -> unit
-  val read_register : Stdint.uint16 -> Stdint.uint8
-  val exit : unit -> unit
-end
+  type t =  {
+    frame_counter : Frame_counter.t;
+    pulse1 : Pulse.t;
+    pulse2 : Pulse.t;
+    triangle : Triangle.t;
+    resampler : Divider.t;
+    half_clock : Divider.t;
+    backend : audio_backend;
+  }
 
-module Make (A : AUDIO_BACKEND) : APU = struct
   (* to be adjusted dynamically *)
-  let sampling_period = 
-    (float_of_int cpu_freq) /. (float_of_int A.sampling)
-    |> int_of_float
+  let sampling_period b = cpu_freq / b.sampling_freq
 
-  let frame_counter = Frame_counter.create ()
-  let pulse1 = Pulse.create ()
-  let pulse2 = Pulse.create ()
-  let triangle = Triangle.create ()
-  let resampler = Divider.create (sampling_period - 1)
-  let half_clock = Divider.create 1
+  let create backend = {
+    frame_counter = Frame_counter.create ();
+    pulse1 = Pulse.create ();
+    pulse2 = Pulse.create ();
+    triangle = Triangle.create ();
+    resampler = Divider.create (sampling_period backend - 1);
+    half_clock = Divider.create 1;
+    backend
+  }
 
-  let write_register v r =
+  let write_register t v r =
     let open Stdint in
     let v = Uint8.to_int v in
     let r = Uint16.to_int r in
     match r with
-    | 0x4000 -> Pulse.write0 pulse1 v
-    | 0x4001 -> Pulse.write1 pulse1 v
-    | 0x4002 -> Pulse.write2 pulse1 v
-    | 0x4003 -> Pulse.write3 pulse1 v
-    | 0x4004 -> Pulse.write0 pulse2 v
-    | 0x4005 -> Pulse.write1 pulse2 v
-    | 0x4006 -> Pulse.write2 pulse2 v
-    | 0x4007 -> Pulse.write3 pulse2 v
-    | 0x4008 -> Triangle.write_linear triangle v
-    | 0x400A -> Triangle.write_a triangle v
-    | 0x400B -> Triangle.write_b triangle v
+    | 0x4000 -> Pulse.write0 t.pulse1 v
+    | 0x4001 -> Pulse.write1 t.pulse1 v
+    | 0x4002 -> Pulse.write2 t.pulse1 v
+    | 0x4003 -> Pulse.write3 t.pulse1 v
+    | 0x4004 -> Pulse.write0 t.pulse2 v
+    | 0x4005 -> Pulse.write1 t.pulse2 v
+    | 0x4006 -> Pulse.write2 t.pulse2 v
+    | 0x4007 -> Pulse.write3 t.pulse2 v
+    | 0x4008 -> Triangle.write_linear t.triangle v
+    | 0x400A -> Triangle.write_a t.triangle v
+    | 0x400B -> Triangle.write_b t.triangle v
     | 0x4015 -> (* status *)
       let e_pulse1 = (v land 0x1) <> 0 in
       let e_pulse2 = (v land 0x2) <> 0 in
       let e_triangle = (v land 0x4) <> 0 in
       let _e_noise = (v land 0x8) <> 0 in
       let _e_dmc = (v land 0x10) <> 0 in
-      Pulse.update pulse1 e_pulse1;
-      Pulse.update pulse2 e_pulse2;
-      Triangle.update triangle e_triangle
+      Pulse.update t.pulse1 e_pulse1;
+      Pulse.update t.pulse2 e_pulse2;
+      Triangle.update t.triangle e_triangle
       (* TODO update other stuff *)
-    | 0x4017 -> Frame_counter.write frame_counter v
+    | 0x4017 -> Frame_counter.write t.frame_counter v
     | _ -> ()
 
-  let read_register r =
+  let read_register t r =
     if (Stdint.Uint16.to_int r) = 0x4015 then (
       let iob n b = if b then 1 lsl n else 0 in
-      let a_pulse1 = Pulse.active pulse1 |> iob 0 in
-      let a_pulse2 = Pulse.active pulse1 |> iob 1 in
-      let a_triangle = Triangle.active triangle |> iob 2 in
-      let interrupt = frame_counter.frame_interrupt |> iob 6 in
+      let a_pulse1 = Pulse.active t.pulse1 |> iob 0 in
+      let a_pulse2 = Pulse.active t.pulse1 |> iob 1 in
+      let a_triangle = Triangle.active t.triangle |> iob 2 in
+      let interrupt = t.frame_counter.frame_interrupt |> iob 6 in
       a_pulse1 lor a_pulse2 lor interrupt lor a_triangle |> Stdint.Uint8.of_int
       (* TODO other bits *)
     ) else failwith "Read invalid APU register"
 
-  let mixer () =
-    let pulse1 = (float_of_int @@ Pulse.output pulse1) in
-    let pulse2 = (float_of_int @@ Pulse.output pulse2) in
-    let triangle = (float_of_int @@ Triangle.output triangle) in
+  let mixer t =
+    let pulse1 = (float_of_int @@ Pulse.output t.pulse1) in
+    let pulse2 = (float_of_int @@ Pulse.output t.pulse2) in
+    let triangle = (float_of_int @@ Triangle.output t.triangle) in
     let noise = 0. in
     let dmc = 0. in
     let pulse_out = 95.88 /. (8128. /. (pulse1 +. pulse2) +. 100.) in
@@ -347,30 +351,32 @@ module Make (A : AUDIO_BACKEND) : APU = struct
   let push_sample =
     let mini_buffer =
       Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout 1 in
-    fun () -> (
-        let value = mixer () in (* [0. - 1. ] *)
+    fun t -> (
+        let value = mixer t in (* [0. - 1. ] *)
         mini_buffer.{0} <- value;
-        match Sdl.queue_audio A.device mini_buffer with
+        match Sdl.queue_audio t.backend.device mini_buffer with
         | Ok () -> ()
         | Error (`Msg e) ->
           Printf.printf "Error when pushing samples: %s\n" e;
           assert false
       )
 
-  let next_cycle () =
+  let next_cycle t =
     (* Clock pulse timers *)
-    if Divider.clock half_clock then (
-      Frame_counter.clock frame_counter (pulse1, pulse2, triangle);
-      Pulse.clock pulse1;
-      Pulse.clock pulse2;
+    if Divider.clock t.half_clock then (
+      Frame_counter.clock t.frame_counter (t.pulse1, t.pulse2, t.triangle);
+      Pulse.clock t.pulse1;
+      Pulse.clock t.pulse2;
     );
-    Triangle.clock triangle;
-    if Divider.clock resampler then push_sample ()
+    Triangle.clock t.triangle;
+    if Divider.clock t.resampler then push_sample t
 
-  let exit () = Sdl.close_audio_device A.device
+  let exit t = Sdl.close_audio_device t.backend.device
 end
 
-let init () =
+include APU
+
+let create () =
   match Sdl.init Sdl.Init.audio with
   | Error (`Msg e) ->
     Printf.printf "Error while initializing audio device %s" e;
@@ -393,9 +399,8 @@ let init () =
     | Ok h -> h
     in
     Sdl.pause_audio_device dev false;
-    let module Backend = struct
-      let sampling = have.as_freq
-      let device = dev
-    end in
-    let module A = Make(Backend) in (module A: APU)
-
+    let backend = APU.{
+      sampling_freq = have.as_freq;
+      device = dev
+    } in
+    APU.create backend
