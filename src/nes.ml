@@ -1,5 +1,5 @@
 let load_rom_memory rom =
-  let open Rom_loader in
+  let open Rom in
   Array.blit (Array.map C6502.Int_utils.u8 rom.chr_rom)
     0 Ppu.State.Mem.main 0x0 (rom.config.chr_rom_size)
 
@@ -29,16 +29,79 @@ module FPS = struct
     )
 end
 
+type devices = {
+  rom : Rom.t;
+  apu : Apu.t
+}
+
+module Build_NES (M : Mappers.Mapper) : (C6502.MemoryMap with type input = devices) = struct
+  open Infix_int.Common
+  type input = devices
+  type t = {
+    main : U8.t array;
+    mapper : M.t;
+    apu : Apu.t;
+  }
+
+  let create {rom; apu} = {
+    main = Array.make 0x8000 0u;
+    mapper = M.create rom;
+    apu
+  }
+
+  (* Utils *)
+  let is_in_ppu_range addr = addr >= 0x2000U && addr <= 0x2007U
+  let is_in_apu_range addr = addr >= 0x4000U && addr <= 0x4017U && addr <> 0x4014U
+  let is_in_cartridge_range addr = addr >= 0x8000U
+
+
+  let address_mirroring a =
+    let open U16 in
+    if a < 0x2000U then (* RAM mirroring *)
+      a $& 0x07FFU
+    else if (a $>> 13) = 1U then (* PPU mirroring *) (* TODO also mask ?*)
+      a $& 0x2007U
+    else a
+
+  let read t (a : U16.t) : U8.t =
+    let open U16 in
+    let a = address_mirroring a in
+    if is_in_ppu_range a then
+      Ppu.get_register (to_int (logand a 7U))
+    else if a = 0x4015U then
+      Apu.read_register t.apu a
+    else if a = 0x4016U then
+      Input.next_register ()
+    else if is_in_cartridge_range a then
+      M.read t.mapper a
+    else t.main.(?% a)
+
+  let write t (a : U16.t) (v : U8.t) =
+    let open U16 in
+    let a = address_mirroring a in
+    if is_in_ppu_range a then
+      Ppu.set_register (to_int (logand a 7U)) v
+    else if is_in_apu_range a then
+      Apu.write_register t.apu v a
+    else if a = 0x4014U then
+      Ppu.dma (read t) (?$ v $<< 8)
+    else if is_in_cartridge_range a then
+      M.write t.mapper a v
+    else t.main.(?% a) <- v
+end
+
+
 let () =
-  let open Rom_loader in
   if Array.length Sys.argv <= 1 then (
     Printf.printf "No ROM provided\n"
   ) else (
     let apu = Apu.create () in
-    let rom, memory_map_m = load_rom Sys.argv.(1) in
+    let rom = Rom.load Sys.argv.(1) in
+    let mapper = Mappers.find rom in
     (* Create the CPU from the Mapper and ROM *)
-    let module MMap = (val memory_map_m : Template) in
-    let module NES = C6502.Make (MMap) in
+    let module Mapper = (val mapper : Mappers.Mapper) in
+    let module Memory_Map = Build_NES(Mapper) in
+    let module NES = C6502.Make (Memory_Map) in
     let cpu = NES.create {apu; rom} in
     load_rom_memory rom;
     let main = Ppu.init (fun () -> NES.interrupt cpu) rom.config.mirroring in
