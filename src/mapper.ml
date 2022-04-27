@@ -1,8 +1,8 @@
 open Infix_int.Common
 
-module type Mapper = (C6502.MemoryMap with type input := Rom.t)
+module type S = (C6502.MemoryMap with type input := Rom.t)
 
-module NROM : Mapper = struct
+module NROM : S = struct
   type t = U8.t array
 
   let create rom =
@@ -20,7 +20,7 @@ module NROM : Mapper = struct
   let write t a v = t.(?% (a $& 0x7FFFU)) <- v
 end
 
-module UxROM : Mapper = struct
+module UxROM : S = struct
   type t = {
     banks : U8.t array array;
     mutable selected : int
@@ -50,7 +50,7 @@ module UxROM : Mapper = struct
 end
 
 let mappers = [
-  (0, (module NROM : Mapper));
+  (0, (module NROM : S));
   (2, (module UxROM))
 ]
 

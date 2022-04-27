@@ -34,7 +34,7 @@ type devices = {
   apu : Apu.t
 }
 
-module Build_NES (M : Mappers.Mapper) : (C6502.MemoryMap with type input = devices) = struct
+module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = struct
   open Infix_int.Common
   type input = devices
   type t = {
@@ -97,9 +97,9 @@ let () =
   ) else (
     let apu = Apu.create () in
     let rom = Rom.load Sys.argv.(1) in
-    let mapper = Mappers.find rom in
+    let mapper = Mapper.find rom in
     (* Create the CPU from the Mapper and ROM *)
-    let module Mapper = (val mapper : Mappers.Mapper) in
+    let module Mapper = (val mapper : Mapper.S) in
     let module Memory_Map = Build_NES(Mapper) in
     let module NES = C6502.Make (Memory_Map) in
     let cpu = NES.create {apu; rom} in
