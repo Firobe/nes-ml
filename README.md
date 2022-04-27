@@ -20,3 +20,10 @@ Hard-coded controls :
 - Select : backspace
 - Home: open debugging windows
 - End: close debugging windows
+
+## Development status
+
+- Barebones GUI
+- Cycle-accute CPU (see [`6502-ml`](https://github.com/Firobe/6502-ml))
+- Cycle-accurate PPU (with rough edges)
+- Partially implemented cycle-accurate APU (with rough edges)
