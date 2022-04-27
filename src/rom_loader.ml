@@ -23,10 +23,6 @@ type rom = {
   trainer : int array option;
 }
 
-module type ROM = sig
-  val get : rom
-end
-
 let read_file path =
   let file = open_in_bin path in
   let size = in_channel_length file in
@@ -71,12 +67,28 @@ let is_in_ppu_range addr = addr >= 0x2000U && addr <= 0x2007U
 let is_in_apu_range addr = addr >= 0x4000U && addr <= 0x4017U && addr <> 0x4014U
 let is_in_cartridge_range addr = addr >= 0x8000U
 
-module type MAPPER = functor (R : ROM) -> C6502.MemoryMap
+module type Mapper = (C6502.MemoryMap with type input := rom)
 
-module Make_NES_CPU (A : Apu.APU) (M : MAPPER) (R : ROM) = struct
-  module C = M(R)
+type devices = {
+  rom : rom;
+  apu : Apu.t
+}
 
-  let mem = Array.make 0x8000 0u (* Main memory *)
+module type Template = (C6502.MemoryMap with type input = devices)
+
+module Memory_map_of_mapper (M : Mapper) : Template = struct
+  type input = devices
+  type t = {
+    main : U8.t array;
+    mapper : M.t;
+    apu : Apu.t;
+  }
+
+  let create {rom; apu} = {
+    main = Array.make 0x8000 0u;
+    mapper = M.create rom;
+    apu
+  }
 
   let address_mirroring a =
     let open U16 in
@@ -86,36 +98,37 @@ module Make_NES_CPU (A : Apu.APU) (M : MAPPER) (R : ROM) = struct
       a $& 0x2007U
     else a
 
-  let read (a : U16.t) : U8.t =
+  let read t (a : U16.t) : U8.t =
     let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
       Ppu.get_register (to_int (logand a 7U))
     else if a = 0x4015U then
-      A.read_register a
+      Apu.read_register t.apu a
     else if a = 0x4016U then
       Input.next_register ()
     else if is_in_cartridge_range a then
-      C.read a
-    else mem.(?% a)
+      M.read t.mapper a
+    else t.main.(?% a)
 
-  let write (a : U16.t) (v : U8.t) =
+  let write t (a : U16.t) (v : U8.t) =
     let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
       Ppu.set_register (to_int (logand a 7U)) v
     else if is_in_apu_range a then
-      A.write_register v a
+      Apu.write_register t.apu v a
     else if a = 0x4014U then
-      Ppu.dma read (?$ v $<< 8)
+      Ppu.dma (read t) (?$ v $<< 8)
     else if is_in_cartridge_range a then
-      C.write a v
-    else mem.(?% a) <- v
+      M.write t.mapper a v
+    else t.main.(?% a) <- v
 end
 
-module NROM (R : ROM) = struct
-  let prg_rom =
-    let rom = R.get in
+module NROM : Mapper = struct
+  type t = U8.t array
+
+  let create rom =
     let bank_nb = rom.config.prg_rom_size / 0x4000 in
     if bank_nb = 2 then Array.map C6502.Int_utils.u8 rom.prg_rom
     else
@@ -125,46 +138,50 @@ module NROM (R : ROM) = struct
       Array.map C6502.Int_utils.u8 m
 
   open U16
-  let read a = prg_rom.(?% (a $& 0x7FFFU))
-  let write a v = prg_rom.(?% (a $& 0x7FFFU)) <- v
+  let read t a = t.(?% (a $& 0x7FFFU))
+  let write t a v = t.(?% (a $& 0x7FFFU)) <- v
 end
 
-module UxROM (R : ROM) = struct
-  let banks =
-    let rom = R.get in
+module UxROM : Mapper = struct
+  type t = {
+    banks : U8.t array array;
+    mutable selected : int
+  }
+
+  let create rom =
     let bank_nb = rom.config.prg_rom_size / 0x4000 in
     let create_bank _ = Array.make 0x4000 0x00 in
     let banks = Array.init bank_nb create_bank in
     for i = 0 to bank_nb - 1 do
       Array.blit rom.prg_rom (0x4000 * i) banks.(i) 0 0x4000
-    done ; Array.map (Array.map C6502.Int_utils.u8) banks
+    done ;
+    let banks = Array.map (Array.map C6502.Int_utils.u8) banks in
+    {banks; selected = 0}
 
-  let last_bank = banks.(Array.length banks - 1)
-  let selected = ref 0
+  let last_bank t = t.banks.(Array.length t.banks - 1)
 
   open U16
-  let read a =
+  let read t a =
     if a >= 0xC000U then
-      last_bank.(?% (a $& 0X3FFFU))
+      (last_bank t).(?% (a $& 0X3FFFU))
     else
-      banks.(!selected).(?% (a $& 0x3FFFU))
+      t.banks.(t.selected).(?% (a $& 0x3FFFU))
 
-  let write _ v = selected := U8.to_int v
+  let write t _ v = t.selected <- U8.to_int v
 end
 
 let mappers = [
-  (0, (module NROM : MAPPER));
+  (0, (module NROM : Mapper));
   (2, (module UxROM))
 ]
 
-let load_rom apu path =
+let load_rom path =
   let rom = read_file path in
   let config = read_header rom in
   Printf.printf "Mapper %d\n" config.mapper_nb ;
-  let prepared_cpu = match List.assoc_opt config.mapper_nb mappers with
+  let memory_map = match List.assoc_opt config.mapper_nb mappers with
     | None -> raise (Invalid_ROM "Unsupported mapper")
-    | Some x ->
-      (module (Make_NES_CPU((val apu : Apu.APU))((val x : MAPPER))) : MAPPER)
+    | Some x -> (module Memory_map_of_mapper(val x : Mapper) : Template)
   in
   Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
   Printf.printf "CHR ROM is %d bytes\n" config.chr_rom_size;
@@ -190,4 +207,4 @@ let load_rom apu path =
     prg_rom = prg_rom;
     chr_rom = chr_rom;
     trainer = trainer;
-  }, prepared_cpu
+  }, memory_map

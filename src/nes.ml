@@ -29,57 +29,54 @@ module FPS = struct
     )
 end
 
-let main_loop disps cpu apu limit =
-  let module NesCpu = (val cpu : C6502.CPU) in
-  let module NesApu = (val apu : Apu.APU) in
-  let rec aux frame limit =
-    if frame mod 100 = 0 then (Input.get_inputs ());
-    if frame <> limit && (Input.continue ()) then (
-      if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
-        disps.debug := Some (Ppu.Debug.init ())
-      )
-      else if Input.(key_pressed Debug_off) then (
-        match !(disps.debug) with
-        | Some d -> Ppu.Debug.delete d; disps.debug := None
-        | None -> ()
-      );
-      FPS.check ();
-      let old = !NesCpu.cycle_count in
-      NesCpu.fetch_instr ();
-      let elapsed = !NesCpu.cycle_count - old in
-      n_times NesApu.next_cycle elapsed;
-      n_times (fun () -> Ppu.next_cycle disps.main) (elapsed * 3);
-      Ppu.Debug.render !(disps.debug);
-      aux (frame + 1) limit
-    )
-  in aux 0 limit;
-  NesApu.exit ()
-
 let () =
   let open Rom_loader in
-  if Array.length Sys.argv > 1 then (
-    let apu = Apu.init () in
-    let rom, pre_cpu = load_rom apu Sys.argv.(1) in
+  if Array.length Sys.argv <= 1 then (
+    Printf.printf "No ROM provided\n"
+  ) else (
+    let apu = Apu.create () in
+    let rom, memory_map_m = load_rom Sys.argv.(1) in
     (* Create the CPU from the Mapper and ROM *)
-    let module NesCpu = C6502.MakeCPU ((val pre_cpu : MAPPER) (struct let get = rom end)) in
+    let module MMap = (val memory_map_m : Template) in
+    let module NES = C6502.Make (MMap) in
+    let cpu = NES.create {apu; rom} in
     load_rom_memory rom;
-    let main = Ppu.init NesCpu.interrupt rom.config.mirroring in
+    let main = Ppu.init (fun () -> NES.interrupt cpu) rom.config.mirroring in
     let disps = {
       debug = ref None;
       main
     } in
-    NesCpu.Register.set `S 0xFDu ;
-    NesCpu.Register.set `P 0x34u ;
-    NesCpu.PC.init () ;
-    NesCpu.enable_decimal := false ;
-    let cpu = (module NesCpu : C6502.CPU) in
+    NES.Register.set (NES.registers cpu) `S 0xFDu ;
+    NES.Register.set (NES.registers cpu) `P 0x34u ;
+    NES.PC.init (NES.pc cpu) (NES.memory cpu) ;
+    NES.enable_decimal cpu false ;
     begin try
-        main_loop disps cpu apu (-1) ;
+        let rec aux frame =
+          if frame mod 100 = 0 then (Input.get_inputs ());
+          if Input.continue () then (
+            if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
+              disps.debug := Some (Ppu.Debug.init ())
+            )
+            else if Input.(key_pressed Debug_off) then (
+              match !(disps.debug) with
+              | Some d -> Ppu.Debug.delete d; disps.debug := None
+              | None -> ()
+            );
+            FPS.check ();
+            let old = NES.cycle_count cpu in
+            NES.fetch_instr cpu;
+            let elapsed = NES.cycle_count cpu - old in
+            n_times (fun () -> Apu.next_cycle apu) elapsed;
+            n_times (fun () -> Ppu.next_cycle disps.main) (elapsed * 3);
+            Ppu.Debug.render !(disps.debug);
+            aux (frame + 1)
+          )
+        in aux 0
       with C6502.Invalid_instruction (addr, opcode) ->
         Format.printf
           "The CPU encountered an invalid instruction %a at address %a.\n"
           C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
     end ;
+    Apu.exit apu;
     Ppu.exit main
   )
-  else Printf.printf "No ROM provided\n"
