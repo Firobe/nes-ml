@@ -24,6 +24,27 @@ module Divider = struct
       t.counter <- t.counter - 1; false
     )
 end
+(*
+module Float_divider = struct
+  let precision = 4
+  type t = {
+    main_divider : Divider.t;
+
+  }
+  let get_periods f_period =
+    let main_period = int_of_float f_period in
+    let sub_period = 1 in
+
+  let create f_period = {
+    let m, s = get_periods f_period in
+    main_divider = Divider.create m;
+    sub_divider = Divider.create s
+  }
+
+  let clock t =
+    if Divider.clock 
+end
+   *)
 
 module Sequencer = struct
   type t = {
@@ -260,12 +281,17 @@ module type APU = sig
 end
 
 module Make (A : AUDIO_BACKEND) : APU = struct
+  (* to be adjusted dynamically *)
+  let sampling_period = 
+    (float_of_int cpu_freq) /. (float_of_int A.sampling)
+    |> int_of_float
+
   let frame_counter = Frame_counter.create ()
   let pulse1 = Pulse.create ()
   let pulse2 = Pulse.create ()
   let triangle = Triangle.create ()
-
-  let cycle = ref 0
+  let resampler = Divider.create (sampling_period - 1)
+  let half_clock = Divider.create 1
 
   let write_register v r =
     let open Stdint in
@@ -318,36 +344,28 @@ module Make (A : AUDIO_BACKEND) : APU = struct
     let tnd_out = 159.79 /. (1. /. tnd_factor +. 100.) in
     pulse_out +. tnd_out
 
-  let push_samples () =
-    let value = mixer () in (* [0. - 1. ] *)
-    (*
-    if to_write <> 0 then (
-      Printf.printf "Queued: %d %d\n" (Sdl.get_queued_audio_size A.device) to_write
-    );
-       *)
-    let a = Bigarray.Array1.init
-        Bigarray.Float32 Bigarray.c_layout 1 (fun _ -> value) in
-    match Sdl.queue_audio A.device a with
-    | Ok () -> ()
-    | Error (`Msg e) ->
-      Printf.printf "Error when pushing samples: %s\n" e;
-      assert false
-
-  (* to be adjusted dynamically *)
-  let sampling_period = 
-    (float_of_int cpu_freq) /. (float_of_int A.sampling)
-    |> int_of_float
+  let push_sample =
+    let mini_buffer =
+      Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout 1 in
+    fun () -> (
+        let value = mixer () in (* [0. - 1. ] *)
+        mini_buffer.{0} <- value;
+        match Sdl.queue_audio A.device mini_buffer with
+        | Ok () -> ()
+        | Error (`Msg e) ->
+          Printf.printf "Error when pushing samples: %s\n" e;
+          assert false
+      )
 
   let next_cycle () =
-    incr cycle;
     (* Clock pulse timers *)
-    if !cycle mod 2 = 0 then (
+    if Divider.clock half_clock then (
       Frame_counter.clock frame_counter (pulse1, pulse2, triangle);
       Pulse.clock pulse1;
-      Pulse.clock pulse2
+      Pulse.clock pulse2;
     );
     Triangle.clock triangle;
-    if !cycle mod sampling_period = 0 then push_samples ()
+    if Divider.clock resampler then push_sample ()
 
   let exit () = Sdl.close_audio_device A.device
 end
