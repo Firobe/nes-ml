@@ -27,3 +27,4 @@ Hard-coded controls :
 - Cycle-accute CPU (see [`6502-ml`](https://github.com/Firobe/6502-ml))
 - Cycle-accurate PPU (with rough edges)
 - Partially implemented cycle-accurate APU (with rough edges)
+- Implemented mappers: 1, 3
