@@ -1,3 +1,4 @@
+open Infix_int.Common
 open Tsdl
 
 (* TODO: separate backend type from the main state *)
@@ -81,6 +82,46 @@ module Length_counter = struct
   let load t v = load t lengths.(v)
 end
 
+module Envelope = struct
+  type t = {
+    mutable start : bool;
+    mutable volume : int;
+    mutable constant : bool;
+    mutable decay : int;
+    mutable loop : bool;
+    divider : Divider.t
+  }
+
+  let create () = {
+    start = false;
+    volume = 0;
+    loop = false;
+    constant = false;
+    decay = 0;
+    divider = Divider.create 0
+  }
+
+  let set_start t = t.start <- true
+  let set_loop t b = t.loop <- b
+  let set_volume t v = t.volume <- v
+
+  let clock t =
+    if t.start then (
+      t.start <- false;
+      t.decay <- 15;
+      Divider.set_length t.divider t.volume
+    )
+    else (
+      if Divider.clock t.divider then (
+        if t.decay = 0 && t.loop then t.decay <- 15
+        else if t.decay > 0 then t.decay <- t.decay - 1
+      )
+    )
+
+  let output t =
+    if t.constant then t.volume else t.decay
+end
+
 module Pulse = struct
   (* TODO sweep *)
 
@@ -97,6 +138,7 @@ module Pulse = struct
     length : Length_counter.t;
     mutable duty_type : int;
     mutable enabled : bool;
+    envelope : Envelope.t
   }
 
   let create () = {
@@ -105,13 +147,17 @@ module Pulse = struct
     length = Length_counter.create ();
     duty_type = 0;
     enabled = false;
+    envelope = Envelope.create ()
   }
 
   let active t = Length_counter.active t.length
 
   let write0 t v =
     t.duty_type <- (v lsr 6);
-    Length_counter.update t.length ((v land 0x8) <> 0)
+    let halt_loop = (v land 0x20) <> 0 in
+    Envelope.set_volume t.envelope (v land 0xF);
+    Envelope.set_loop t.envelope halt_loop;
+    Length_counter.update t.length halt_loop
 
   let update t v =
     t.enabled <- v;
@@ -127,7 +173,8 @@ module Pulse = struct
     let new_length = (t.timer.length land 0xFF) lor ((v land 0x7) lsl 8) in
     Divider.set_length t.timer new_length;
     Length_counter.load t.length (v lsr 3);
-    Sequencer.reset t.sequencer
+    Sequencer.reset t.sequencer;
+    Envelope.set_start t.envelope
 
   let clock t =
     if Divider.clock t.timer then (
@@ -139,8 +186,7 @@ module Pulse = struct
 
   let output t = 
     if t.timer.length >= 8 && Length_counter.active t.length then (
-      (* this should be the envelope instead of 15 TODO *)
-      15 * duties.(t.duty_type).(Sequencer.get t.sequencer)
+      (Envelope.output t.envelope) * duties.(t.duty_type).(Sequencer.get t.sequencer)
     )
     else 0
 end
@@ -214,6 +260,100 @@ module Triangle = struct
   let output t = sequence.(Sequencer.get t.sequencer)
 end
 
+(* Linear Feedback Shift Register *)
+module LFSR = struct
+  type t = {
+    mutable register : U16.t;
+    mutable mode : bool;
+  }
+
+  let create () = {
+    register = U16.one;
+    mode = false
+  }
+
+  let set_mode t b = t.mode <- b
+
+  let active t =
+    let open U16 in
+    (t.register $& 1U) = 0U
+
+  let feedback t =
+    let open U16 in
+    let b0 = t.register $& 1U in
+    let n = if t.mode then 6 else 1 in
+    let bn = (t.register $>> n) $& 1U in
+    b0 $^ bn = 1U
+
+  let clock t =
+    let open U16 in
+    let feedback = feedback t in
+    t.register <- t.register $>> 1;
+    if feedback then
+      t.register <- t.register $| 0x4000U
+
+end
+
+module Noise = struct
+  type t = {
+    length : Length_counter.t;
+    timer : Divider.t;
+    lfsr : LFSR.t;
+    mutable enabled : bool;
+    envelope : Envelope.t
+  }
+
+  let create () = {
+    length = Length_counter.create ();
+    timer = Divider.create 0;
+    lfsr = LFSR.create ();
+    enabled = false;
+    envelope = Envelope.create ()
+  }
+
+  let update t v =
+    t.enabled <- v;
+    if not t.enabled then Length_counter.reset t.length 
+
+  let active t = Length_counter.active t.length
+
+  let periods = [|
+    4; 8; 16; 32; 64; 96; 128; 160; 202; 254; 380; 508; 762; 1016; 2034; 4068
+  |]
+
+  let write_c t v =
+    let halt_loop = (v land 0x20) <> 0 in
+    Envelope.set_loop t.envelope halt_loop;
+    Envelope.set_volume t.envelope (v land 0xF);
+    Length_counter.update t.length halt_loop
+
+  let write_e t v =
+    Divider.set_length t.timer periods.(0xF land v);
+    LFSR.set_mode t.lfsr ((v land 0x80) <> 0)
+
+  let write_f t v =
+    Length_counter.load t.length (v lsr 3);
+    Envelope.set_start t.envelope
+
+  let frame_clock t =
+    if t.enabled then Length_counter.clock t.length
+
+  let output t =
+    if LFSR.active t.lfsr && Length_counter.active t.length then (
+      (*
+      Envelope.output t.envelope
+         *) 0
+    )
+    else (
+      0
+    )
+
+  let clock t =
+    if Divider.clock t.timer then (
+      LFSR.clock t.lfsr
+    )
+end
+
 module Frame_counter = struct
   module Event = struct
     type t = O | E | EL | ELF
@@ -247,18 +387,21 @@ module Frame_counter = struct
       (if mode then 5 else 4);
     Sequencer.clock t.sequencer
 
-  let action t (pulse1, pulse2, triangle) =
+  let action t (pulse1, pulse2, triangle, noise) =
     let mode_array = if t.mode then mode2 else mode1 in
     let event = mode_array.(Sequencer.get t.sequencer) in
     if Event.is_e event then (
       Triangle.linear_frame_clock triangle;
-      (* TODO clock envelope *)
+      Envelope.clock Pulse.(pulse1.envelope);
+      Envelope.clock Pulse.(pulse2.envelope);
+      Envelope.clock Noise.(noise.envelope)
     );
     if Event.is_l event then (
       (* clock length counters and sweep units TODO *)
       Pulse.frame_clock pulse1;
       Pulse.frame_clock pulse2;
-      Triangle.frame_clock triangle
+      Triangle.frame_clock triangle;
+      Noise.frame_clock noise
     );
     t.frame_interrupt <- Event.is_f event
     (* TODO actually interrupt the CPU *)
@@ -283,6 +426,7 @@ module APU = struct
     triangle : Triangle.t;
     resampler : Divider.t;
     half_clock : Divider.t;
+    noise : Noise.t;
     backend : audio_backend;
   }
 
@@ -296,6 +440,7 @@ module APU = struct
     triangle = Triangle.create ();
     resampler = Divider.create (sampling_period backend - 1);
     half_clock = Divider.create 1;
+    noise = Noise.create ();
     backend
   }
 
@@ -315,15 +460,19 @@ module APU = struct
     | 0x4008 -> Triangle.write_linear t.triangle v
     | 0x400A -> Triangle.write_a t.triangle v
     | 0x400B -> Triangle.write_b t.triangle v
+    | 0x400C -> Noise.write_c t.noise v
+    | 0x400E -> Noise.write_e t.noise v
+    | 0x400F -> Noise.write_f t.noise v
     | 0x4015 -> (* status *)
       let e_pulse1 = (v land 0x1) <> 0 in
       let e_pulse2 = (v land 0x2) <> 0 in
       let e_triangle = (v land 0x4) <> 0 in
-      let _e_noise = (v land 0x8) <> 0 in
+      let e_noise = (v land 0x8) <> 0 in
       let _e_dmc = (v land 0x10) <> 0 in
       Pulse.update t.pulse1 e_pulse1;
       Pulse.update t.pulse2 e_pulse2;
-      Triangle.update t.triangle e_triangle
+      Triangle.update t.triangle e_triangle;
+      Noise.update t.noise e_noise
       (* TODO update other stuff *)
     | 0x4017 -> Frame_counter.write t.frame_counter v
     | _ -> ()
@@ -334,8 +483,10 @@ module APU = struct
       let a_pulse1 = Pulse.active t.pulse1 |> iob 0 in
       let a_pulse2 = Pulse.active t.pulse1 |> iob 1 in
       let a_triangle = Triangle.active t.triangle |> iob 2 in
+      let a_noise = Noise.active t.noise |> iob 3 in
       let interrupt = t.frame_counter.frame_interrupt |> iob 6 in
-      a_pulse1 lor a_pulse2 lor interrupt lor a_triangle |> Stdint.Uint8.of_int
+      a_pulse1 lor a_pulse2 lor interrupt lor a_triangle lor a_noise
+      |> Stdint.Uint8.of_int
       (* TODO other bits *)
     ) else failwith "Read invalid APU register"
 
@@ -343,7 +494,7 @@ module APU = struct
     let pulse1 = (float_of_int @@ Pulse.output t.pulse1) in
     let pulse2 = (float_of_int @@ Pulse.output t.pulse2) in
     let triangle = (float_of_int @@ Triangle.output t.triangle) in
-    let noise = 0. in
+    let noise = (float_of_int @@ Noise.output t.noise) in
     let dmc = 0. in
     let pulse_out = 95.88 /. (8128. /. (pulse1 +. pulse2) +. 100.) in
     let tnd_factor = triangle /. 8227. +. noise /. 12241. +. dmc /. 22638. in
@@ -366,9 +517,11 @@ module APU = struct
   let next_cycle t =
     (* Clock pulse timers *)
     if Divider.clock t.half_clock then (
-      Frame_counter.clock t.frame_counter (t.pulse1, t.pulse2, t.triangle);
+      Frame_counter.clock t.frame_counter
+        (t.pulse1, t.pulse2, t.triangle, t.noise);
       Pulse.clock t.pulse1;
       Pulse.clock t.pulse2;
+      Noise.clock t.noise
     );
     Triangle.clock t.triangle;
     if Divider.clock t.resampler then push_sample t
