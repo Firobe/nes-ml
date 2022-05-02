@@ -122,6 +122,18 @@ module Envelope = struct
     if t.constant then t.volume else t.decay
 end
 
+module Sweep = struct
+  type t = {
+    divider : Divider.t;
+    mutable reload : bool;
+  }
+
+  let create () = {
+    divider = Divider.create 0;
+    reload = false
+  }
+end
+
 module Pulse = struct
   (* TODO sweep *)
 
@@ -340,9 +352,7 @@ module Noise = struct
 
   let output t =
     if LFSR.active t.lfsr && Length_counter.active t.length then (
-      (*
       Envelope.output t.envelope
-         *) 0
     )
     else (
       0
