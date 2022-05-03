@@ -100,19 +100,21 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
   }
   type t = {
     mutable state : state;
-    mutable saved_state : state;
     io : io
   }
 
-  let deep_copy (type t) (x : t) : t = 
-    let buf = Marshal.(to_bytes x [Closures]) in
-    Marshal.from_bytes buf 0
+  let save_name = "nes-state"
 
   let save_state t =
-    t.saved_state <- deep_copy t.state
+    let chan = open_out_bin save_name in
+    Marshal.(to_channel chan t.state [Closures]);
+    close_out chan
 
   let load_state t =
-    t.state <- deep_copy t.saved_state
+    let chan = open_in_bin save_name in
+    let state' = Marshal.from_channel chan in
+    t.state <- state';
+    close_in chan
 
   let create ({apu; rom; ppu} : devices) =
     let cpu = NES.create {apu; rom; ppu} in
@@ -123,11 +125,10 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     NES.PC.init (NES.pc cpu) (NES.memory cpu) ;
     NES.enable_decimal cpu false ;
     let state = {cpu; apu; ppu; rom} in
-    let saved_state = deep_copy state in
     let io = {
       debug = None;
       main = Ppu.Window.create ()
-    } in {state; saved_state; io}
+    } in {state; io}
 
   let manage_debug_windows t =
     if Input.(key_pressed Debug_on) && t.io.debug = None then (
