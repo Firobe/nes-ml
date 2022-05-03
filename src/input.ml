@@ -42,14 +42,15 @@ let rec get_inputs () =
   if Sdl.poll_event (Some event) then
     get_inputs ()
 
-let nes_input_state = ref 0
+type t = {mutable next_key : int}
+let create () = {next_key = 0}
 
 let nes_key_order = Array.of_list [A; B; Select; Start; Up; Down; Left; Right]
 
-let next_nes_key () =
-  let to_check = nes_key_order.(!nes_input_state) in
-  nes_input_state := (!nes_input_state + 1) mod 8;
+let next_nes_key t =
+  let to_check = nes_key_order.(t.next_key) in
+  t.next_key <- (t.next_key + 1) mod 8;
   key_pressed to_check
 
-let next_register () =
-  if next_nes_key () then 1u else 0u
+let next_register t =
+  if next_nes_key t then 1u else 0u

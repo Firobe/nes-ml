@@ -37,12 +37,14 @@ module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = 
     main : U8.t array;
     mapper : M.t;
     apu : Apu.t;
-    ppu : Ppu.t
+    ppu : Ppu.t;
+    input : Input.t;
   }
 
   let create {rom; apu; ppu} = {
     main = Array.make 0x8000 0u;
     mapper = M.create rom;
+    input = Input.create ();
     apu; ppu
   }
 
@@ -68,7 +70,7 @@ module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = 
     else if a = 0x4015U then
       Apu.read_register t.apu a
     else if a = 0x4016U then
-      Input.next_register ()
+      Input.next_register t.input
     else if is_in_cartridge_range a then
       M.read t.mapper a
     else t.main.(?% a)
