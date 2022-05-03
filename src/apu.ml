@@ -1,5 +1,7 @@
 open Tsdl
 
+(* TODO: separate backend type from the main state *)
+
 (* in Hz *)
 let master_freq = 21477272
 let cpu_freq = 1789773 

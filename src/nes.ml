@@ -8,11 +8,6 @@ let rec n_times f n =
     f (); n_times f (n - 1)
   )
 
-type disps = {
-  main : Display.t;
-  debug : (Ppu.Debug.t option) ref
-}
-
 module FPS = struct
   let last_frame = ref 0
   let next_time = ref 0.
@@ -92,6 +87,64 @@ module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = 
     else t.main.(?% a) <- v
 end
 
+module Main (NES : (C6502.CPU with type input := devices)) = struct
+  type state = {
+    cpu : NES.t;
+    apu : Apu.t;
+    ppu : Ppu.t;
+    rom : Rom.t;
+  }
+  type io = {
+    mutable debug : Ppu.Debug.t option;
+    main : Display.t
+  }
+  type t = {state : state; io : io}
+
+  let create ({apu; rom; ppu} : devices) =
+    let cpu = NES.create {apu; rom; ppu} in
+    Ppu.set_interrupt ppu (fun () -> NES.interrupt cpu);
+    load_rom_memory ppu rom;
+    NES.Register.set (NES.registers cpu) `S 0xFDu ;
+    NES.Register.set (NES.registers cpu) `P 0x34u ;
+    NES.PC.init (NES.pc cpu) (NES.memory cpu) ;
+    NES.enable_decimal cpu false ;
+    let state = {cpu; apu; ppu; rom} in
+    let io = {
+      debug = None;
+      main = Ppu.Window.create ()
+    } in {state; io}
+
+  let manage_debug_windows t =
+    if Input.(key_pressed Debug_on) && t.io.debug = None then (
+      t.io.debug <- Some (Ppu.Debug.create ())
+    )
+    else if Input.(key_pressed Debug_off) then (
+      match t.io.debug with
+      | Some d -> Ppu.Debug.delete d; t.io.debug <- None
+      | None -> ()
+    )
+
+  let run t =
+    let rec aux frame =
+      if frame mod 100 = 0 then (Input.get_inputs ());
+      if Input.continue () then (
+        manage_debug_windows t;
+        FPS.check t.state.ppu;
+        let old = NES.cycle_count t.state.cpu in
+        NES.fetch_instr t.state.cpu;
+        let elapsed = NES.cycle_count t.state.cpu - old in
+        n_times (fun () -> Apu.next_cycle t.state.apu) elapsed;
+        n_times (fun () -> Ppu.next_cycle t.state.ppu t.io.main) (elapsed * 3);
+        Ppu.Debug.render t.state.ppu t.io.debug;
+        aux (frame + 1)
+      )
+    in aux 0
+
+  let close_io {io; state} =
+    Apu.exit state.apu;
+    Ppu.Window.exit io.main
+end
+
 
 let () =
   if Array.length Sys.argv <= 1 then (
@@ -105,44 +158,14 @@ let () =
     let module Mapper = (val mapper : Mapper.S) in
     let module Memory_Map = Build_NES(Mapper) in
     let module NES = C6502.Make (Memory_Map) in
-    let cpu = NES.create {apu; rom; ppu} in
-    Ppu.set_interrupt ppu (fun () -> NES.interrupt cpu);
-    load_rom_memory ppu rom;
-    let disps = {
-      debug = ref None;
-      main = Ppu.Window.create ()
-    } in
-    NES.Register.set (NES.registers cpu) `S 0xFDu ;
-    NES.Register.set (NES.registers cpu) `P 0x34u ;
-    NES.PC.init (NES.pc cpu) (NES.memory cpu) ;
-    NES.enable_decimal cpu false ;
+    let module System = Main(NES) in
+    let state = System.create {rom; apu; ppu} in
     begin try
-        let rec aux frame =
-          if frame mod 100 = 0 then (Input.get_inputs ());
-          if Input.continue () then (
-            if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
-              disps.debug := Some (Ppu.Debug.create ())
-            )
-            else if Input.(key_pressed Debug_off) then (
-              match !(disps.debug) with
-              | Some d -> Ppu.Debug.delete d; disps.debug := None
-              | None -> ()
-            );
-            FPS.check ppu;
-            let old = NES.cycle_count cpu in
-            NES.fetch_instr cpu;
-            let elapsed = NES.cycle_count cpu - old in
-            n_times (fun () -> Apu.next_cycle apu) elapsed;
-            n_times (fun () -> Ppu.next_cycle ppu disps.main) (elapsed * 3);
-            Ppu.Debug.render ppu !(disps.debug);
-            aux (frame + 1)
-          )
-        in aux 0
+        System.run state
       with C6502.Invalid_instruction (addr, opcode) ->
         Format.printf
           "The CPU encountered an invalid instruction %a at address %a.\n"
           C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
     end ;
-    Apu.exit apu;
-    Ppu.Window.exit disps.main
+    System.close_io state
   )
