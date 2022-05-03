@@ -96,9 +96,23 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
   }
   type io = {
     mutable debug : Ppu.Debug.t option;
-    main : Display.t
+    main : Display.t;
   }
-  type t = {state : state; io : io}
+  type t = {
+    mutable state : state;
+    mutable saved_state : state;
+    io : io
+  }
+
+  let deep_copy (type t) (x : t) : t = 
+    let buf = Marshal.(to_bytes x [Closures]) in
+    Marshal.from_bytes buf 0
+
+  let save_state t =
+    t.saved_state <- deep_copy t.state
+
+  let load_state t =
+    t.state <- deep_copy t.saved_state
 
   let create ({apu; rom; ppu} : devices) =
     let cpu = NES.create {apu; rom; ppu} in
@@ -109,10 +123,11 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     NES.PC.init (NES.pc cpu) (NES.memory cpu) ;
     NES.enable_decimal cpu false ;
     let state = {cpu; apu; ppu; rom} in
+    let saved_state = deep_copy state in
     let io = {
       debug = None;
       main = Ppu.Window.create ()
-    } in {state; io}
+    } in {state; saved_state; io}
 
   let manage_debug_windows t =
     if Input.(key_pressed Debug_on) && t.io.debug = None then (
@@ -124,11 +139,16 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
       | None -> ()
     )
 
+  let manage_save_states t =
+    if Input.(key_pressed Save_state) then save_state t
+    else if Input.(key_pressed Load_state) then load_state t
+
   let run t =
     let rec aux frame =
       if frame mod 100 = 0 then (Input.get_inputs ());
       if Input.continue () then (
         manage_debug_windows t;
+        manage_save_states t;
         FPS.check t.state.ppu;
         let old = NES.cycle_count t.state.cpu in
         NES.fetch_instr t.state.cpu;
@@ -140,7 +160,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
       )
     in aux 0
 
-  let close_io {io; state} =
+  let close_io {io; state; _} =
     Apu.exit state.apu;
     Ppu.Window.exit io.main
 end

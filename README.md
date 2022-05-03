@@ -20,6 +20,8 @@ Hard-coded controls :
 - Select : backspace
 - Home: open debugging windows
 - End: close debugging windows
+- I: save state
+- O: load state
 
 ## Development status
 
@@ -27,4 +29,5 @@ Hard-coded controls :
 - Cycle-accute CPU (see [`6502-ml`](https://github.com/Firobe/6502-ml))
 - Cycle-accurate PPU (with rough edges)
 - Partially implemented cycle-accurate APU (with rough edges)
+- Save states (only one, and pretty slow)
 - Implemented mappers: 1, 3

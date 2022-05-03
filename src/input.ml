@@ -11,6 +11,8 @@ type nes_input =
   | Select
   | Debug_on
   | Debug_off
+  | Save_state
+  | Load_state
 
 let state = Sdl.get_keyboard_state ()
 
@@ -25,6 +27,8 @@ let mapping = function
   | Select -> Sdl.Scancode.backspace
   | Debug_on -> Tsdl.Sdl.Scancode.home
   | Debug_off -> Tsdl.Sdl.Scancode.kend
+  | Save_state -> Tsdl.Sdl.Scancode.i
+  | Load_state -> Tsdl.Sdl.Scancode.o
 
 let key_pressed key =
   let scancode = mapping key in
