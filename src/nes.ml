@@ -1,7 +1,7 @@
-let load_rom_memory rom =
+let load_rom_memory ppu rom =
   let open Rom in
-  Array.blit (Array.map C6502.Int_utils.u8 rom.chr_rom)
-    0 Ppu.State.Mem.main 0x0 (rom.config.chr_rom_size)
+  Ppu.init_memory ppu (Array.map C6502.Int_utils.u8 rom.chr_rom)
+    rom.config.chr_rom_size
 
 let rec n_times f n =
   if n > 0 then (
@@ -16,10 +16,10 @@ type disps = {
 module FPS = struct
   let last_frame = ref 0
   let next_time = ref 0.
-  let check () =
+  let check ppu =
     let now = Unix.time () in
     if now >= !next_time then (
-      let new_frame = !Ppu.State.Rendering.frame in
+      let new_frame = Ppu.frame ppu in
       let diff = new_frame - !last_frame in
       if diff < 60 then (
         Printf.printf "Too slow! %d FPS\n%!" diff;
@@ -31,7 +31,8 @@ end
 
 type devices = {
   rom : Rom.t;
-  apu : Apu.t
+  apu : Apu.t;
+  ppu : Ppu.t
 }
 
 module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = struct
@@ -41,12 +42,13 @@ module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = 
     main : U8.t array;
     mapper : M.t;
     apu : Apu.t;
+    ppu : Ppu.t
   }
 
-  let create {rom; apu} = {
+  let create {rom; apu; ppu} = {
     main = Array.make 0x8000 0u;
     mapper = M.create rom;
-    apu
+    apu; ppu
   }
 
   (* Utils *)
@@ -67,7 +69,7 @@ module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = 
     let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
-      Ppu.get_register (to_int (logand a 7U))
+      Ppu.get_register t.ppu (to_int (logand a 7U))
     else if a = 0x4015U then
       Apu.read_register t.apu a
     else if a = 0x4016U then
@@ -80,11 +82,11 @@ module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = 
     let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then
-      Ppu.set_register (to_int (logand a 7U)) v
+      Ppu.set_register t.ppu (to_int (logand a 7U)) v
     else if is_in_apu_range a then
       Apu.write_register t.apu v a
     else if a = 0x4014U then
-      Ppu.dma (read t) (?$ v $<< 8)
+      Ppu.dma t.ppu (read t) (?$ v $<< 8)
     else if is_in_cartridge_range a then
       M.write t.mapper a v
     else t.main.(?% a) <- v
@@ -95,19 +97,20 @@ let () =
   if Array.length Sys.argv <= 1 then (
     Printf.printf "No ROM provided\n"
   ) else (
-    let apu = Apu.create () in
     let rom = Rom.load Sys.argv.(1) in
+    let apu = Apu.create () in
+    let ppu = Ppu.create rom.config.mirroring in
     let mapper = Mapper.find rom in
     (* Create the CPU from the Mapper and ROM *)
     let module Mapper = (val mapper : Mapper.S) in
     let module Memory_Map = Build_NES(Mapper) in
     let module NES = C6502.Make (Memory_Map) in
-    let cpu = NES.create {apu; rom} in
-    load_rom_memory rom;
-    let main = Ppu.init (fun () -> NES.interrupt cpu) rom.config.mirroring in
+    let cpu = NES.create {apu; rom; ppu} in
+    Ppu.set_interrupt ppu (fun () -> NES.interrupt cpu);
+    load_rom_memory ppu rom;
     let disps = {
       debug = ref None;
-      main
+      main = Ppu.Window.create ()
     } in
     NES.Register.set (NES.registers cpu) `S 0xFDu ;
     NES.Register.set (NES.registers cpu) `P 0x34u ;
@@ -118,20 +121,20 @@ let () =
           if frame mod 100 = 0 then (Input.get_inputs ());
           if Input.continue () then (
             if Input.(key_pressed Debug_on) && !(disps.debug) = None then (
-              disps.debug := Some (Ppu.Debug.init ())
+              disps.debug := Some (Ppu.Debug.create ())
             )
             else if Input.(key_pressed Debug_off) then (
               match !(disps.debug) with
               | Some d -> Ppu.Debug.delete d; disps.debug := None
               | None -> ()
             );
-            FPS.check ();
+            FPS.check ppu;
             let old = NES.cycle_count cpu in
             NES.fetch_instr cpu;
             let elapsed = NES.cycle_count cpu - old in
             n_times (fun () -> Apu.next_cycle apu) elapsed;
-            n_times (fun () -> Ppu.next_cycle disps.main) (elapsed * 3);
-            Ppu.Debug.render !(disps.debug);
+            n_times (fun () -> Ppu.next_cycle ppu disps.main) (elapsed * 3);
+            Ppu.Debug.render ppu !(disps.debug);
             aux (frame + 1)
           )
         in aux 0
@@ -141,5 +144,5 @@ let () =
           C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
     end ;
     Apu.exit apu;
-    Ppu.exit main
+    Ppu.Window.exit disps.main
   )
