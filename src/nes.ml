@@ -108,15 +108,19 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
   let save_name = "nes-state"
 
   let save_state t =
-    let chan = open_out_bin save_name in
-    Marshal.(to_channel chan t.state [Closures]);
-    close_out chan
+    try
+      let chan = open_out_bin save_name in
+      Marshal.(to_channel chan t.state [Closures]);
+      close_out chan
+    with Sys_error err -> Printf.printf "Cannot save state: %s\n%!" err
 
   let load_state t =
-    let chan = open_in_bin save_name in
-    let state' = Marshal.from_channel chan in
-    t.state <- state';
-    close_in chan
+    try
+      let chan = open_in_bin save_name in
+      let state' = Marshal.from_channel chan in
+      t.state <- state';
+      close_in chan
+    with Sys_error err -> Printf.printf "Cannot load state: %s\n%!" err
 
   let create ({apu; rom; ppu} : devices) =
     let cpu = NES.create {apu; rom; ppu} in
