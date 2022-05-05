@@ -44,9 +44,21 @@ let read_file path =
   Printf.printf "Loaded %d bytes of memory (%s)\n" size hash;
   (res, hash)
 
-let build_save_name t =
-  let save_suffix = ".sav" in
-  t.hash ^ "_" ^ t.file_name ^ save_suffix
+module Save_file = struct
+  let suffix = ".sav"
+  let separator = "_"
+
+  let make_name t =
+    t.hash ^ separator ^ t.file_name ^ suffix
+
+  let find_matching_name t =
+    let cwd = Sys.getcwd () in
+    let files = Sys.readdir cwd in
+    let regex = Printf.sprintf "%s%s.*\\%s$" t.hash separator suffix |>
+                Str.regexp in
+    let pred candidate = Str.string_match regex candidate 0 in
+    Array.find_opt pred files
+end
 
 let nth_bit b n =
   (b land (1 lsl n)) != 0

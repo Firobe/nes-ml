@@ -107,7 +107,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
 
   let save_state t =
     try
-      let save_name = Rom.build_save_name t.state.rom in
+      let save_name = Rom.Save_file.make_name t.state.rom in
       let chan = open_out_bin save_name in
       Marshal.(to_channel chan t.state [Closures]);
       close_out chan
@@ -115,18 +115,21 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     | Sys_error err -> Printf.printf "Cannot save state: %s\n%!" err
 
   let load_state t =
+    let err msg = Printf.printf "Cannot load state: %s\n%!" msg in
     try
-      let save_name = Rom.build_save_name t.state.rom in
-      let chan = open_in_bin save_name in
-      let state' = Marshal.from_channel chan in
-      t.state <- state';
-      close_in chan
+      match Rom.Save_file.find_matching_name t.state.rom with
+      | Some path ->
+        let chan = open_in_bin path in
+        let state' = Marshal.from_channel chan in
+        t.state <- state';
+        close_in chan
+      | None -> err "no save file existing."
     with
-    | Sys_error err -> Printf.printf "Cannot load state: %s\n%!" err
-    | Failure err ->
+    | Sys_error msg -> err msg
+    | Failure msg ->
       Printf.printf
         "Cannot parse save state (%s). It was \
-         probably saved with a different version of the emulator.\n%!" err
+         probably saved with a different version of the emulator.\n%!" msg
 
   let create ({apu; rom; ppu} : devices) =
     let cpu = NES.create {apu; rom; ppu} in

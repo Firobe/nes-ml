@@ -25,4 +25,8 @@ type t = {
 }
 
 val load : string -> t
-val build_save_name : t -> string
+
+module Save_file : sig
+  val make_name : t -> string
+  val find_matching_name : t -> string option
+end
