@@ -16,6 +16,8 @@ type rom_config = {
 }
 
 type t = {
+  file_name : string;
+  hash : string;
   config : rom_config;
   prg_rom : int array;
   chr_rom : int array;
@@ -23,3 +25,4 @@ type t = {
 }
 
 val load : string -> t
+val build_save_name : t -> string

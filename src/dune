@@ -3,5 +3,5 @@
     (public_name nes)
     (package NES-ml)
     (preprocess (pps stdint-literals))
-	(libraries 6502-ml tsdl stdint)
+	(libraries 6502-ml tsdl stdint fpath digestif)
 )

@@ -12,6 +12,7 @@ depends: [
   "tsdl"
   "stdint"
   "stdint-literals"
+  "fpath"
   "dune" {>= "3.0" & build}
   "odoc" {with-doc}
 ]

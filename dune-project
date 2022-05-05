@@ -19,4 +19,6 @@
     tsdl
     stdint
     stdint-literals
+    fpath
+    digestif
     (dune :build)))

@@ -16,11 +16,20 @@ type rom_config = {
 }
 
 type t = {
+  file_name : string;
+  hash : string;
   config : rom_config;
   prg_rom : int array;
   chr_rom : int array;
   trainer : int array option;
 }
+
+let truncated_hash b =
+  let trunc_size = 6 in
+  let open Digestif.MD5 in
+  let hash = digest_bytes b in
+  let hex = to_hex hash in
+  String.sub hex 0 trunc_size
 
 let read_file path =
   let file = open_in_bin path in
@@ -31,7 +40,13 @@ let read_file path =
   for i = 0 to size - 1 do
     res.(i) <- int_of_char @@ Bytes.get store i
   done ;
-  Printf.printf "Loaded %d bytes of memory\n" size ; res
+  let hash = truncated_hash store in
+  Printf.printf "Loaded %d bytes of memory (%s)\n" size hash;
+  (res, hash)
+
+let build_save_name t =
+  let save_suffix = ".sav" in
+  t.hash ^ "_" ^ t.file_name ^ save_suffix
 
 let nth_bit b n =
   (b land (1 lsl n)) != 0
@@ -58,7 +73,13 @@ let read_header rom  =
   config
 
 let load path =
-  let rom = read_file path in
+  let file_name =
+    match Fpath.of_string path with
+    | Ok p -> Fpath.(normalize p |> rem_ext |> basename)
+    | Error _ -> failwith "Invalid ROM path"
+  in
+  Printf.printf "Opening ROM: '%s'\n" file_name;
+  let (rom, hash) = read_file path in
   let config = read_header rom in
   Printf.printf "Mapper %d\n" config.mapper_nb ;
   Printf.printf "PRG ROM is %d bytes\n" config.prg_rom_size;
@@ -81,6 +102,8 @@ let load path =
   cur_address := !cur_address + config.chr_rom_size;
   (* ignored PRG_RAM, Playchoices data, title *)
   {
+    file_name;
+    hash;
     config = config;
     prg_rom = prg_rom;
     chr_rom = chr_rom;
