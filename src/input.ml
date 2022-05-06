@@ -9,12 +9,9 @@ type nes_input =
   | Up
   | Start
   | Select
-  | Debug_on
-  | Debug_off
+  | Debug
   | Save_state
   | Load_state
-
-let state = Sdl.get_keyboard_state ()
 
 let mapping = function
   | A -> Sdl.Scancode.s
@@ -25,10 +22,26 @@ let mapping = function
   | Up -> Sdl.Scancode.up
   | Start -> Sdl.Scancode.return
   | Select -> Sdl.Scancode.backspace
-  | Debug_on -> Tsdl.Sdl.Scancode.home
-  | Debug_off -> Tsdl.Sdl.Scancode.kend
+  | Debug -> Tsdl.Sdl.Scancode.home
   | Save_state -> Tsdl.Sdl.Scancode.i
   | Load_state -> Tsdl.Sdl.Scancode.o
+
+
+type t = {
+  mutable next_key : int;
+}
+
+type callback = unit -> unit
+
+type callbacks = {
+  debug : callback;
+  save_state : callback;
+  load_state : callback;
+}
+
+let create () = {next_key = 0}
+
+let state = Sdl.get_keyboard_state ()
 
 let key_pressed key =
   let scancode = mapping key in
@@ -37,10 +50,23 @@ let key_pressed key =
 let continue () =
   state.{Sdl.Scancode.escape} == 0
 
-let get_inputs () = Sdl.pump_events ()
-
-type t = {mutable next_key : int}
-let create () = {next_key = 0}
+let get_inputs (c : callbacks) =
+  let open Sdl in
+  let event = Event.create () in
+  let rec aux () =
+    if poll_event (Some event) then (
+      let typ = Event.get event Event.typ in
+      begin match Event.enum typ with
+        | `Key_up ->
+          let scancode = Event.get event Event.keyboard_scancode in
+          if scancode = mapping Debug then c.debug ()
+          else if scancode = mapping Save_state then c.save_state ()
+          else if scancode = mapping Load_state then c.load_state ()
+        | _ -> ()
+      end;
+      aux ()
+    )
+  in aux ()
 
 let nes_key_order = Array.of_list [A; B; Select; Start; Up; Down; Left; Right]
 

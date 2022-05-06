@@ -105,7 +105,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     io : io
   }
 
-  let save_state t =
+  let save_state t () =
     try
       let save_name = Rom.Save_file.make_name t.state.rom in
       let chan = open_out_bin save_name in
@@ -114,7 +114,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     with
     | Sys_error err -> Printf.printf "Cannot save state: %s\n%!" err
 
-  let load_state t =
+  let load_state t () =
     let err msg = Printf.printf "Cannot load state: %s\n%!" msg in
     try
       match Rom.Save_file.find_matching_name t.state.rom with
@@ -145,26 +145,22 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
       main = Ppu.Window.create ()
     } in {state; io}
 
-  let manage_debug_windows t =
-    if Input.(key_pressed Debug_on) && t.io.debug = None then (
+  let debug_callback t () =
+    match t.io.debug with
+    | None ->
       t.io.debug <- Some (Ppu.Debug.create ())
-    )
-    else if Input.(key_pressed Debug_off) then (
-      match t.io.debug with
-      | Some d -> Ppu.Debug.delete d; t.io.debug <- None
-      | None -> ()
-    )
-
-  let manage_save_states t =
-    if Input.(key_pressed Save_state) then save_state t
-    else if Input.(key_pressed Load_state) then load_state t
+    | Some d ->
+      Ppu.Debug.delete d; t.io.debug <- None
 
   let run t =
+    let callbacks = Input.{
+      debug = debug_callback t;
+      save_state = save_state t;
+      load_state = load_state t;
+    } in
     let rec aux frame =
-      if frame mod 100 = 0 then (Input.get_inputs ());
+      if frame mod 100 = 0 then (Input.get_inputs callbacks);
       if Input.continue () then (
-        manage_debug_windows t;
-        manage_save_states t;
         FPS.check t.state.ppu;
         let old = NES.cycle_count t.state.cpu in
         NES.fetch_instr t.state.cpu;
