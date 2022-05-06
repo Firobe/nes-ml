@@ -18,14 +18,13 @@ Hard-coded controls :
 - Arrows : arrows
 - Start : return
 - Select : backspace
-- Home: open debugging windows
-- End: close debugging windows
+- Home: toggle debugging windows
 - I: save state
 - O: load state
 
 ## Development status
 
-- Barebones GUI
+- Barebones GUI (with debugging windows showing the internal PPU state)
 - Cycle-accute CPU (see [`6502-ml`](https://github.com/Firobe/6502-ml))
 - Cycle-accurate PPU (with rough edges)
 - Partially implemented cycle-accurate APU (with rough edges)
