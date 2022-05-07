@@ -101,6 +101,7 @@ module Envelope = struct
     divider = Divider.create 0
   }
 
+  let set_constant t b = t.constant <- b
   let set_start t = t.start <- true
   let set_loop t b = t.loop <- b
   let set_volume t v = t.volume <- v
@@ -128,7 +129,7 @@ module Sweep = struct
     mutable reload : bool;
   }
 
-  let create () = {
+  let _create () = {
     divider = Divider.create 0;
     reload = false
   }
@@ -167,6 +168,8 @@ module Pulse = struct
   let write0 t v =
     t.duty_type <- (v lsr 6);
     let halt_loop = (v land 0x20) <> 0 in
+    let constant = (v land 0x10) <> 0 in
+    Envelope.set_constant t.envelope constant;
     Envelope.set_volume t.envelope (v land 0xF);
     Envelope.set_loop t.envelope halt_loop;
     Length_counter.update t.length halt_loop
@@ -335,6 +338,8 @@ module Noise = struct
 
   let write_c t v =
     let halt_loop = (v land 0x20) <> 0 in
+    let constant = (v land 0x10) <> 0 in
+    Envelope.set_constant t.envelope constant;
     Envelope.set_loop t.envelope halt_loop;
     Envelope.set_volume t.envelope (v land 0xF);
     Length_counter.update t.length halt_loop
