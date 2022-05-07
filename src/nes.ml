@@ -108,31 +108,33 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     io : io
   }
 
-  let save_state t () =
-    try
-      let save_name = Rom.Save_file.make_name t.state.rom in
-      let chan = open_out_bin save_name in
-      Marshal.(to_channel chan t.state [Closures]);
-      close_out chan
-    with
-    | Sys_error err -> Printf.printf "Cannot save state: %s\n%!" err
+  module Save_state = struct
+    let save t slot =
+      try
+        let save_name = Rom.Save_file.make_name t.state.rom slot in
+        let chan = open_out_bin save_name in
+        Marshal.(to_channel chan t.state [Closures]);
+        close_out chan
+      with
+      | Sys_error err -> Printf.printf "Cannot save state: %s\n%!" err
 
-  let load_state t () =
-    let err msg = Printf.printf "Cannot load state: %s\n%!" msg in
-    try
-      match Rom.Save_file.find_matching_name t.state.rom with
-      | Some path ->
-        let chan = open_in_bin path in
-        let state' = Marshal.from_channel chan in
-        t.state <- state';
-        close_in chan
-      | None -> err "no save file existing."
-    with
-    | Sys_error msg -> err msg
-    | Failure msg ->
-      Printf.printf
-        "Cannot parse save state (%s). It was \
-         probably saved with a different version of the emulator.\n%!" msg
+    let load t slot =
+      let err msg = Printf.printf "Cannot load state: %s\n%!" msg in
+      try
+        match Rom.Save_file.find_matching_name t.state.rom slot with
+        | Some path ->
+          let chan = open_in_bin path in
+          let state' = Marshal.from_channel chan in
+          t.state <- state';
+          close_in chan
+        | None -> err "no save file existing."
+      with
+      | Sys_error msg -> err msg
+      | Failure msg ->
+        Printf.printf
+          "Cannot parse save state (%s). It was \
+           probably saved with a different version of the emulator.\n%!" msg
+  end
 
   let create ({apu; rom; ppu} : devices) =
     let cpu = NES.create {apu; rom; ppu} in
@@ -158,8 +160,8 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
   let run t =
     let callbacks = Input.{
       debug = debug_callback t;
-      save_state = save_state t;
-      load_state = load_state t;
+      save_state = Save_state.save t;
+      load_state = Save_state.load t;
     } in
     let rec aux frame =
       if frame mod 100 = 0 then (Input.get_inputs callbacks);

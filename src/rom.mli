@@ -27,6 +27,7 @@ type t = {
 val load : string -> t
 
 module Save_file : sig
-  val make_name : t -> string
-  val find_matching_name : t -> string option
+  type slot = S1 | S2 | S3
+  val make_name : t -> slot -> string
+  val find_matching_name : t -> slot -> string option
 end

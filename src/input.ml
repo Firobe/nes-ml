@@ -1,8 +1,6 @@
 open Tsdl
 
 module Keys = struct
-  type save_slot = S1 | S2 | S3
-
   type t =
     | A
     | B
@@ -13,8 +11,8 @@ module Keys = struct
     | Start
     | Select
     | Debug
-    | Save_state of save_slot
-    | Load_state of save_slot
+    | Save_state of Rom.Save_file.slot
+    | Load_state of Rom.Save_file.slot
 
   let compare = Stdlib.compare
 end
@@ -51,12 +49,10 @@ type t = {
   mutable next_key : int;
 }
 
-type callback = unit -> unit
-
 type callbacks = {
-  debug : callback;
-  save_state : callback;
-  load_state : callback;
+  debug : unit -> unit;
+  save_state : Rom.Save_file.slot -> unit;
+  load_state : Rom.Save_file.slot -> unit;
 }
 
 let create () = {next_key = 0}
@@ -84,8 +80,8 @@ let get_inputs (c : callbacks) =
           let binding = {key; kmod} in
           begin match reverse_binding binding with
             | Some Debug -> c.debug ()
-            | Some Save_state _ -> c.save_state ()
-            | Some Load_state _ -> c.load_state ()
+            | Some Save_state slot -> c.save_state slot
+            | Some Load_state slot -> c.load_state slot
             | _ -> ()
           end
         | _ -> ()

@@ -45,16 +45,20 @@ let read_file path =
   (res, hash)
 
 module Save_file = struct
+  type slot = S1 | S2 | S3
   let suffix = ".sav"
   let separator = "_"
 
-  let make_name t =
-    t.hash ^ separator ^ t.file_name ^ suffix
+  let num_of_slot = function S1 -> 1 | S2 -> 2 | S3 -> 3
 
-  let find_matching_name t =
+  let make_name t slot =
+    t.hash ^ separator ^ t.file_name ^ suffix ^ Int.to_string (num_of_slot slot)
+
+  let find_matching_name t slot =
     let cwd = Sys.getcwd () in
     let files = Sys.readdir cwd in
-    let regex = Printf.sprintf "%s%s.*\\%s$" t.hash separator suffix |>
+    let sn = num_of_slot slot in
+    let regex = Printf.sprintf "%s%s.*\\%s%d$" t.hash separator suffix sn |>
                 Str.regexp in
     let pred candidate = Str.string_match regex candidate 0 in
     Array.find_opt pred files

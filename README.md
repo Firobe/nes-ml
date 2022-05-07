@@ -18,9 +18,9 @@ Hard-coded controls :
 - Arrows : arrows
 - Start : return
 - Select : backspace
-- Home: toggle debugging windows
-- I: save state
-- O: load state
+- Toggle debugging windows: home
+- Save state in slot 1/2/3: 1/2/3
+- Load state from slot 1/2/3: Shift+1/2/3
 
 ## Development status
 
@@ -28,5 +28,5 @@ Hard-coded controls :
 - Cycle-accute CPU (see [`6502-ml`](https://github.com/Firobe/6502-ml))
 - Cycle-accurate PPU (with rough edges)
 - Partially implemented cycle-accurate APU (with rough edges)
-- Save states (only one)
+- Multiplke save states
 - Implemented mappers: 1, 3
