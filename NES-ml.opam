@@ -14,7 +14,6 @@ depends: [
   "stdint-literals"
   "fpath"
   "digestif"
-  "str"
   "dune" {>= "3.0" & build}
   "odoc" {with-doc}
 ]

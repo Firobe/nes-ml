@@ -21,5 +21,4 @@
     stdint-literals
     fpath
     digestif
-    str
     (dune :build)))
