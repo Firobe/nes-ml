@@ -16,8 +16,11 @@ module FPS = struct
     if now >= !next_time then (
       let new_frame = Ppu.frame ppu in
       let diff = new_frame - !last_frame in
-      if diff < 60 then (
-        Printf.printf "Too slow! %d FPS\n%!" diff;
+      if diff < 59 then (
+        Printf.printf "Too slow! %d FPS\n%!" diff
+      )
+      else if diff > 61 then (
+        Printf.printf "Too fast! %d FPS\n%!" diff
       );
       last_frame := new_frame;
       next_time := now +. 1.
