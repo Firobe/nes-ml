@@ -29,4 +29,4 @@ Hard-coded controls :
 - Cycle-accurate PPU (with rough edges)
 - Partially implemented cycle-accurate APU (with rough edges)
 - Multiplke save states
-- Implemented mappers: 1, 3
+- Implemented mappers: 0, 2
