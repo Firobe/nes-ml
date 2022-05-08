@@ -123,21 +123,66 @@ module Envelope = struct
     if t.constant then t.volume else t.decay
 end
 
+
 module Sweep = struct
+  type pulse_kind = Pulse1 | Pulse2
+
   type t = {
     divider : Divider.t;
+    kind : pulse_kind;
+    mutable shift_count : int;
+    mutable target_period : int;
+    mutable enabled : bool;
     mutable reload : bool;
+    mutable negate_flag : bool;
+    mutable current_period : int;
   }
 
-  let _create () = {
+  let muted t = t.target_period > 0x7FF
+
+  let create kind = {
     divider = Divider.create 0;
+    target_period = 0;
+    current_period = 0;
+    kind;
+    shift_count = 0;
+    enabled = false;
+    negate_flag = false;
     reload = false
   }
+
+  let new_target t period =
+    t.current_period <- period;
+    let change_amount = period lsr t.shift_count in
+    let change_amount = if t.negate_flag then 
+        match t.kind with
+        | Pulse1 -> -change_amount - 1
+        | Pulse2 -> -change_amount
+      else change_amount in
+    let target = period + change_amount in
+    t.target_period <- target
+
+  let write t v =
+    t.enabled <- (v land 0x80) <> 0;
+    let period = (v lsr 4) land 0x7 in
+    Divider.set_length t.divider period;
+    t.negate_flag <- (v land 0x8) <> 0;
+    t.shift_count <- v land 0x7;
+    t.reload <- true
+
+  let clock t =
+    if t.enabled && (not @@ muted t) && Divider.clock t.divider then (
+      t.reload <- false;
+      new_target t t.target_period
+    );
+    if t.reload then (
+      Divider.reload t.divider;
+      t.reload <- false
+    )
+
 end
 
 module Pulse = struct
-  (* TODO sweep *)
-
   let duties = [|
     [|0; 1; 0; 0; 0; 0; 0; 0|];
     [|0; 1; 1; 0; 0; 0; 0; 0|];
@@ -149,16 +194,18 @@ module Pulse = struct
     timer : Divider.t;
     sequencer : Sequencer.t;
     length : Length_counter.t;
+    sweep : Sweep.t;
     mutable duty_type : int;
     mutable enabled : bool;
     envelope : Envelope.t
   }
 
-  let create () = {
+  let create kind = {
     timer = Divider.create 0;
     sequencer = Sequencer.create 8;
     length = Length_counter.create ();
     duty_type = 0;
+    sweep = Sweep.create kind;
     enabled = false;
     envelope = Envelope.create ()
   }
@@ -178,15 +225,17 @@ module Pulse = struct
     t.enabled <- v;
     if not t.enabled then Length_counter.reset t.length 
 
-  let write1 _ _ = ()
+  let write1 t = Sweep.write t.sweep
 
   let write2 t v =
     let new_length = (t.timer.length land 0x700) lor v in
-    Divider.set_length t.timer new_length
+    Divider.set_length t.timer new_length;
+    Sweep.new_target t.sweep new_length
 
   let write3 t v =
     let new_length = (t.timer.length land 0xFF) lor ((v land 0x7) lsl 8) in
     Divider.set_length t.timer new_length;
+    Sweep.new_target t.sweep new_length;
     Length_counter.load t.length (v lsr 3);
     Sequencer.reset t.sequencer;
     Envelope.set_start t.envelope
@@ -197,10 +246,12 @@ module Pulse = struct
     )
 
   let frame_clock t =
-    if t.enabled then Length_counter.clock t.length
+    if t.enabled then (Length_counter.clock t.length);
+    Sweep.clock t.sweep;
+    Divider.set_length t.timer t.sweep.current_period
 
   let output t = 
-    if t.timer.length >= 8 && Length_counter.active t.length then (
+    if t.timer.length >= 8 && (not @@ Sweep.muted t.sweep) && Length_counter.active t.length then (
       (Envelope.output t.envelope) * duties.(t.duty_type).(Sequencer.get t.sequencer)
     )
     else 0
@@ -412,7 +463,7 @@ module Frame_counter = struct
       Envelope.clock Noise.(noise.envelope)
     );
     if Event.is_l event then (
-      (* clock length counters and sweep units TODO *)
+      (* clock length counters TODO *)
       Pulse.frame_clock pulse1;
       Pulse.frame_clock pulse2;
       Triangle.frame_clock triangle;
@@ -450,8 +501,8 @@ module APU = struct
 
   let create backend = {
     frame_counter = Frame_counter.create ();
-    pulse1 = Pulse.create ();
-    pulse2 = Pulse.create ();
+    pulse1 = Pulse.create Sweep.Pulse1;
+    pulse2 = Pulse.create Sweep.Pulse2;
     triangle = Triangle.create ();
     resampler = Divider.create (sampling_period backend - 1);
     half_clock = Divider.create 1;
