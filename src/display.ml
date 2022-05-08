@@ -23,8 +23,7 @@ let create ~width ~height ~scale ~palette title =
   let s_width = scale * width in
   let s_height = scale * height in
   let window = sdl_get @@ Sdl.create_window ~w:s_width ~h:s_height title Sdl.Window.opengl in
-  let flags = Sdl.Renderer.(+) Sdl.Renderer.accelerated
-      Sdl.Renderer.presentvsync in
+  let flags = Sdl.Renderer.accelerated in
   let renderer = sdl_get @@ Sdl.create_renderer ~flags window in
   let texture = sdl_get @@ Sdl.create_texture renderer Sdl.Pixel.format_rgb888
       Sdl.Texture.access_streaming ~w:width ~h:height in
@@ -45,11 +44,27 @@ let clear t back_color =
   let rgb_color = t.palette.(Uint8.to_int back_color mod 64) in
   Array1.fill t.screen rgb_color
 
+module FPS = struct
+  let target = 60.0988 (* NTSC *)
+  let cps = Sdl.get_performance_frequency ()
+  let delta = ((1. /. target) *. (Int64.to_float cps)) |> Int64.of_float
+  let next_time = ref (Int64.zero)
+  let wait_next_frame () =
+    let now = Sdl.get_performance_counter () in
+    if !next_time = Int64.zero then (next_time := now);
+    if now < !next_time then (
+      let to_wait = Int64.((!next_time - now) * 1000L / cps) |> Int32.of_int64 in
+      Sdl.delay to_wait
+    );
+    next_time := Int64.(!next_time + delta)
+end
+
 let render t =
   let pixels, _ = sdl_get @@ Sdl.lock_texture t.texture None Int32 in
   Array1.blit t.screen pixels;
   Sdl.unlock_texture t.texture;
   sdl_get @@ Sdl.render_copy t.renderer t.texture;
+  FPS.wait_next_frame ();
   Sdl.render_present t.renderer
 
 let init () = sdl_get @@ Sdl.init Sdl.Init.video

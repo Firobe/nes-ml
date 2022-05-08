@@ -8,25 +8,6 @@ let rec n_times f n =
     f (); n_times f (n - 1)
   )
 
-module FPS = struct
-  let last_frame = ref 0
-  let next_time = ref 0.
-  let check ppu =
-    let now = Unix.time () in
-    if now >= !next_time then (
-      let new_frame = Ppu.frame ppu in
-      let diff = new_frame - !last_frame in
-      if diff < 59 then (
-        Printf.printf "Too slow! %d FPS\n%!" diff
-      )
-      else if diff > 61 then (
-        Printf.printf "Too fast! %d FPS\n%!" diff
-      );
-      last_frame := new_frame;
-      next_time := now +. 1.
-    )
-end
-
 type devices = {
   rom : Rom.t;
   apu : Apu.t;
@@ -166,7 +147,6 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     let rec aux frame =
       if frame mod 100 = 0 then (Input.get_inputs callbacks);
       if Input.continue () then (
-        FPS.check t.state.ppu;
         let old = NES.cycle_count t.state.cpu in
         NES.fetch_instr t.state.cpu;
         let elapsed = NES.cycle_count t.state.cpu - old in
