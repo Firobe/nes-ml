@@ -420,6 +420,25 @@ module Noise = struct
     )
 end
 
+module DMC = struct
+  type t = {
+    mutable enabled : bool;
+    mutable output_level : int;
+  }
+
+  let create () = {
+    enabled = false;
+    output_level = 0;
+  }
+
+  let write0 _ _ = ()
+  let write1 t v = t.output_level <- v land 0x7F
+  let write2 _ _ = ()
+  let write3 _ _ = ()
+
+  let output t = t.output_level
+end
+
 module Frame_counter = struct
   module Event = struct
     type t = O | E | EL | ELF
@@ -463,7 +482,6 @@ module Frame_counter = struct
       Envelope.clock Noise.(noise.envelope)
     );
     if Event.is_l event then (
-      (* clock length counters TODO *)
       Pulse.frame_clock pulse1;
       Pulse.frame_clock pulse2;
       Triangle.frame_clock triangle;
@@ -493,6 +511,7 @@ module APU = struct
     resampler : Divider.t;
     half_clock : Divider.t;
     noise : Noise.t;
+    dmc : DMC.t;
     backend : audio_backend;
   }
 
@@ -507,6 +526,7 @@ module APU = struct
     resampler = Divider.create (sampling_period backend - 1);
     half_clock = Divider.create 1;
     noise = Noise.create ();
+    dmc = DMC.create ();
     backend
   }
 
@@ -529,6 +549,10 @@ module APU = struct
     | 0x400C -> Noise.write_c t.noise v
     | 0x400E -> Noise.write_e t.noise v
     | 0x400F -> Noise.write_f t.noise v
+    | 0x4010 -> DMC.write0 t.dmc v
+    | 0x4011 -> DMC.write1 t.dmc v
+    | 0x4012 -> DMC.write2 t.dmc v
+    | 0x4013 -> DMC.write3 t.dmc v
     | 0x4015 -> (* status *)
       let e_pulse1 = (v land 0x1) <> 0 in
       let e_pulse2 = (v land 0x2) <> 0 in
@@ -561,7 +585,7 @@ module APU = struct
     let pulse2 = (float_of_int @@ Pulse.output t.pulse2) in
     let triangle = (float_of_int @@ Triangle.output t.triangle) in
     let noise = (float_of_int @@ Noise.output t.noise) in
-    let dmc = 0. in
+    let dmc = (float_of_int @@ DMC.output t.dmc) in
     let pulse_out = 95.88 /. (8128. /. (pulse1 +. pulse2) +. 100.) in
     let tnd_factor = triangle /. 8227. +. noise /. 12241. +. dmc /. 22638. in
     let tnd_out = 159.79 /. (1. /. tnd_factor +. 100.) in
