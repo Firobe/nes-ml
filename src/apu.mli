@@ -1,6 +1,6 @@
 type t
 
-val create : unit -> t
+val create : C6502.IRQ_collector.t -> t
 
 val next_cycle : t -> unit
 

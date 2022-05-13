@@ -11,7 +11,7 @@ let rec n_times f n =
 type devices = {
   rom : Rom.t;
   apu : Apu.t;
-  ppu : Ppu.t
+  ppu : Ppu.t;
 }
 
 module Build_NES (M : Mapper.S) : (C6502.MemoryMap with type input = devices) = struct
@@ -79,6 +79,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     apu : Apu.t;
     ppu : Ppu.t;
     rom : Rom.t;
+    collector : C6502.IRQ_collector.t;
   }
   type io = {
     mutable debug : Ppu.Debug.t option;
@@ -117,15 +118,15 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
            probably saved with a different version of the emulator.\n%!" msg
   end
 
-  let create ({apu; rom; ppu} : devices) =
-    let cpu = NES.create {apu; rom; ppu} in
-    Ppu.set_interrupt ppu (fun () -> NES.interrupt cpu);
+  let create ({apu; rom; ppu} : devices) collector =
+    let cpu = NES.create ~collector {apu; rom; ppu} in
+    Ppu.set_interrupt ppu (fun () -> NES.nmi cpu);
     load_rom_memory ppu rom;
     NES.Register.set (NES.registers cpu) `S 0xFDu ;
     NES.Register.set (NES.registers cpu) `P 0x34u ;
     NES.PC.init (NES.pc cpu) (NES.memory cpu) ;
     NES.enable_decimal cpu false ;
-    let state = {cpu; apu; ppu; rom} in
+    let state = {cpu; apu; ppu; rom; collector} in
     let io = {
       debug = None;
       main = Ppu.Window.create ()
@@ -148,7 +149,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
       if frame mod 100 = 0 then (Input.get_inputs callbacks);
       if Input.continue () then (
         let old = NES.cycle_count t.state.cpu in
-        NES.fetch_instr t.state.cpu;
+        NES.next_cycle t.state.cpu;
         let elapsed = NES.cycle_count t.state.cpu - old in
         n_times (fun () -> Apu.next_cycle t.state.apu) elapsed;
         n_times (fun () -> Ppu.next_cycle t.state.ppu t.io.main) (elapsed * 3);
@@ -167,8 +168,9 @@ let () =
   if Array.length Sys.argv <= 1 then (
     Printf.printf "No ROM provided\n"
   ) else (
+    let collector = C6502.IRQ_collector.create () in
     let rom = Rom.load Sys.argv.(1) in
-    let apu = Apu.create () in
+    let apu = Apu.create collector in
     let ppu = Ppu.create rom.config.mirroring in
     let mapper = Mapper.find rom in
     (* Create the CPU from the Mapper and ROM *)
@@ -176,7 +178,7 @@ let () =
     let module Memory_Map = Build_NES(Mapper) in
     let module NES = C6502.Make (Memory_Map) in
     let module System = Main(NES) in
-    let state = System.create {rom; apu; ppu} in
+    let state = System.create {rom; apu; ppu} collector in
     begin try
         System.run state
       with C6502.Invalid_instruction (addr, opcode) ->

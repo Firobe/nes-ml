@@ -463,16 +463,23 @@ module Frame_counter = struct
     frame_interrupt = false
   }
 
-  let write t v =
+  let collector_id = "apu_frame_counter"
+
+  let clear_interrupt t collector =
+    t.frame_interrupt <- false;
+    C6502.IRQ_collector.set_pulled collector collector_id false
+
+  let write t collector v =
     Divider.reload t.divider;
     Sequencer.reset t.sequencer;
     let mode = (v lsr 7) <> 0 in
     t.mode <- mode;
+    if (v lsr 6) <> 0 then (clear_interrupt t collector);
     Sequencer.set_length t.sequencer
       (if mode then 5 else 4);
     Sequencer.clock t.sequencer
 
-  let action t (pulse1, pulse2, triangle, noise) =
+  let action t (pulse1, pulse2, triangle, noise) collector =
     let mode_array = if t.mode then mode2 else mode1 in
     let event = mode_array.(Sequencer.get t.sequencer) in
     if Event.is_e event then (
@@ -487,13 +494,13 @@ module Frame_counter = struct
       Triangle.frame_clock triangle;
       Noise.frame_clock noise
     );
-    t.frame_interrupt <- Event.is_f event
-    (* TODO actually interrupt the CPU *)
+    t.frame_interrupt <- Event.is_f event;
+    C6502.IRQ_collector.set_pulled collector collector_id t.frame_interrupt
 
-  let clock t units = 
+  let clock t units collector = 
     if Divider.clock t.divider then (
       Sequencer.clock t.sequencer;
-      action t units
+      action t units collector
     )
 end
 
@@ -513,12 +520,13 @@ module APU = struct
     noise : Noise.t;
     dmc : DMC.t;
     backend : audio_backend;
+    collector : C6502.IRQ_collector.t
   }
 
   (* to be adjusted dynamically *)
   let sampling_period b = cpu_freq / b.sampling_freq
 
-  let create backend = {
+  let create backend collector = {
     frame_counter = Frame_counter.create ();
     pulse1 = Pulse.create Sweep.Pulse1;
     pulse2 = Pulse.create Sweep.Pulse2;
@@ -527,6 +535,7 @@ module APU = struct
     half_clock = Divider.create 1;
     noise = Noise.create ();
     dmc = DMC.create ();
+    collector;
     backend
   }
 
@@ -564,7 +573,7 @@ module APU = struct
       Triangle.update t.triangle e_triangle;
       Noise.update t.noise e_noise
       (* TODO update other stuff *)
-    | 0x4017 -> Frame_counter.write t.frame_counter v
+    | 0x4017 -> Frame_counter.write t.frame_counter t.collector v
     | _ -> ()
 
   let read_register t r =
@@ -575,6 +584,7 @@ module APU = struct
       let a_triangle = Triangle.active t.triangle |> iob 2 in
       let a_noise = Noise.active t.noise |> iob 3 in
       let interrupt = t.frame_counter.frame_interrupt |> iob 6 in
+      Frame_counter.clear_interrupt t.frame_counter t.collector;
       a_pulse1 lor a_pulse2 lor interrupt lor a_triangle lor a_noise
       |> Stdint.Uint8.of_int
       (* TODO other bits *)
@@ -608,7 +618,7 @@ module APU = struct
     (* Clock pulse timers *)
     if Divider.clock t.half_clock then (
       Frame_counter.clock t.frame_counter
-        (t.pulse1, t.pulse2, t.triangle, t.noise);
+        (t.pulse1, t.pulse2, t.triangle, t.noise) t.collector;
       Pulse.clock t.pulse1;
       Pulse.clock t.pulse2;
       Noise.clock t.noise
@@ -621,7 +631,7 @@ end
 
 include APU
 
-let create () =
+let create collector =
   match Sdl.init Sdl.Init.audio with
   | Error (`Msg e) ->
     Printf.printf "Error while initializing audio device %s" e;
@@ -648,4 +658,4 @@ let create () =
       sampling_freq = have.as_freq;
       device = dev
     } in
-    APU.create backend
+    APU.create backend collector
