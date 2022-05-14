@@ -328,7 +328,11 @@ let set_register t register (v : U8.t) =
     t.control.background_pattern_address <- if (nth_bit v 4) then 0x1000U else 0U;
     t.control.sprite_size <- nth_bit v 5;
     t.control.master_slave_mode <- nth_bit v 6;
-    t.control.nmi_enabled <- nth_bit v 7
+    let old_nmi = t.control.nmi_enabled in
+    t.control.nmi_enabled <- nth_bit v 7;
+    (* If NMI enabled during VBLANK, interrupt now *)
+    if t.control.nmi_enabled && not old_nmi
+       && t.status.vblank_enabled && not t.status.vbl_read then t.interrupt_cpu ()
   | 1 -> (* Mask register *)
     t.graphics.greyscale <- nth_bit v 0;
     t.graphics.background_leftmost <- nth_bit v 1;
