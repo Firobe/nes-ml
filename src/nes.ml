@@ -171,7 +171,9 @@ let () =
     let collector = C6502.IRQ_collector.create () in
     let rom = Rom.load Sys.argv.(1) in
     let apu = Apu.create collector in
-    let ppu = Ppu.create rom.config.mirroring in
+    let mirroring = if rom.config.mirroring then Ppu.Vertical else
+        Ppu.Horizontal in
+    let ppu = Ppu.create mirroring in
     let mapper = Mapper.find rom in
     (* Create the CPU from the Mapper and ROM *)
     let module Mapper = (val mapper : Mapper.S) in

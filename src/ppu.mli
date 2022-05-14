@@ -1,8 +1,13 @@
 open Stdint
 
 type t
+type mirroring_kind =
+  | Horizontal (* vertical arrangement *)
+  | Vertical (* horizontal arrangement *)
+  | Single
+  | Quad
 
-val create : bool -> t
+val create : mirroring_kind -> t
 val init_memory : t -> uint8 array -> int -> unit
 val set_interrupt : t -> (unit -> unit) -> unit
 

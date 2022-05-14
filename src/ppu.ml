@@ -34,11 +34,17 @@ let reverse_byte b =
   done;
   !res
 
+type mirroring_kind =
+  | Horizontal (* vertical arrangement *)
+  | Vertical (* horizontal arrangement *)
+  | Single
+  | Quad
+
 (** Main memory *)
 module Mem = struct
   type t = {
     main : U8.t array;
-    nt_mirroring : bool;
+    mutable nt_mirroring : mirroring_kind;
     mutable address : U16.t;
     mutable temp_address : U16.t;
     mutable latch : bool;
@@ -60,10 +66,11 @@ module Mem = struct
     r
 
   let nametable_mirroring t v =
-    if t.nt_mirroring then
-      U16.(v $& ?~0x800U)
-    else
-      U16.(v $& ?~0x400U)
+    match t.nt_mirroring with
+    | Horizontal -> U16.(v $& ?~0x400U)
+    | Vertical -> U16.(v $& ?~0x800U)
+    | Single -> U16.(v $& ?~0xC00U)
+    | Quad -> failwith "4-screen mirroring not implemented"
 
   (* PPU memory address with redirections *)
   let address_indirection t v =
@@ -282,7 +289,6 @@ type t = {
   graphics : Graphics.t;
   status : Status.t;
   rendering : Rendering.t;
-  mirroring_mode : bool;
   mutable interrupt_cpu : unit -> unit;
   mutable fine_x_scroll : U8.t;
   mutable vram_buffer : U8.t;
@@ -295,7 +301,6 @@ let create mirroring_mode = {
   graphics = Graphics.create ();
   status = Status.create ();
   rendering = Rendering.create ();
-  mirroring_mode;
   interrupt_cpu = (fun () -> failwith "PPU interrupt not initialized");
   (* Scrolling *)
   fine_x_scroll = 0u;
