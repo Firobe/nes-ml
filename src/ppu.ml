@@ -38,14 +38,16 @@ let reverse_byte b =
 module Mem = struct
   type t = {
     main : U8.t array;
+    nt_mirroring : bool;
     mutable address : U16.t;
     mutable temp_address : U16.t;
     mutable latch : bool;
     mutable bus_latch : U8.t;
   }
 
-  let create () = {
+  let create nt_mirroring = {
     main = Array.make 0x4000 0u;
+    nt_mirroring;
     address = 0U;
     temp_address = 0U; (* 15-bit *)
     latch = true; (* True : first set *)
@@ -57,17 +59,24 @@ module Mem = struct
     t.latch <- not t.latch;
     r
 
+  let nametable_mirroring t v =
+    if t.nt_mirroring then
+      U16.(v $& ?~0x800U)
+    else
+      U16.(v $& ?~0x400U)
+
   (* PPU memory address with redirections *)
-  let address_indirection v =
+  let address_indirection t v =
     let open U16 in
-    if v <= 0x2FFFU then v
+    if v <= 0x1FFFU then v
+    else if v <= 0x2FFFU then nametable_mirroring t v
     else if v <= 0x3EFFU then v $& 0x2FFFU
     else 
       let v = v $& 0x3F1FU in
       if v $& 0x7U = 0U then v $& ?~0x10U else v
 
-  let set t x = t.main.(address_indirection t.address |> U16.to_int) <- x
-  let get t v = t.main.(address_indirection v |> U16.to_int)
+  let set t x = t.main.(address_indirection t t.address |> U16.to_int) <- x
+  let get t v = t.main.(address_indirection t v |> U16.to_int)
 end
 
 module OAM = struct
@@ -280,7 +289,7 @@ type t = {
 }
 
 let create mirroring_mode = {
-  memory = Mem.create ();
+  memory = Mem.create mirroring_mode;
   oam = OAM.create ();
   control = Control.create ();
   graphics = Graphics.create ();
@@ -381,7 +390,7 @@ let get_register t reg =
     t.oam.primary.(U8.to_int t.oam.address)
   | 7 -> (* PPU data *)
     (* Palette mirroring *)
-    let addr = Mem.address_indirection t.memory.address in
+    let addr = Mem.address_indirection t.memory t.memory.address in
     increment_ppu_address t;
     (* Correct buffer *)
     if addr >= 0x3F00U then begin
@@ -815,7 +824,7 @@ module Debug = struct
       for y = 0 to 29 do
         for x = 0 to 31 do
           let addr = addr + y * 32 + x in
-          let v = t.memory.main.(addr) in
+          let v = Mem.get t.memory (U16.of_int addr) in
           Display.set_pixel disp ~x:(x + x_orig) ~y:(y + y_orig) ~color:v
         done
       done
