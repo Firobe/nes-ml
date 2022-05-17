@@ -11,7 +11,7 @@ I recommend using a build with `flambda` activated for more performance.
 
 ## Usage
 
-Use : `nes PATH_TO_ROM`
+Use : `nes PATH_TO_ROM`  
 Hard-coded controls :
 - A : s
 - B : d
@@ -28,5 +28,5 @@ Hard-coded controls :
 - Cycle-accute CPU (see [`6502-ml`](https://github.com/Firobe/6502-ml))
 - Cycle-accurate PPU (with rough edges)
 - Partially implemented cycle-accurate APU (with rough edges)
-- Multiplke save states
+- Multipke save states
 - Implemented mappers: 0, 2
