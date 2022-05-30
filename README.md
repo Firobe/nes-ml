@@ -8,6 +8,8 @@
 
 A NES emulator from scratch in OCaml (and with sound). Still in development (see [development status](#development-status)).
 
+![CI](https://github.com/Firobe/nes-ml/actions/workflows/build.yml/badge.svg)
+
 ## Build & Install
 
 Assuming you have `opam` installed with an existing switch, either:
