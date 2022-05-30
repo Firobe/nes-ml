@@ -6,6 +6,8 @@
   <img alt="Prince of Persia" src="screens/prince_of_persia.png" width="30%"/>
 </p>
 
+A NES emulator from scratch in OCaml (and with sound). Still in development (see [development status](#development-status)).
+
 ## Build & Install
 
 Assuming you have `opam` installed with an existing switch, either:
@@ -44,12 +46,12 @@ Note that the `N` for save states must be 1, 2 or 3.
 
 ## Development status
 
-- Barebones GUI (with debugging windows showing the internal PPU state)
 - **Cycle-accute CPU** (see [`6502-ml`](https://github.com/Firobe/6502-ml))
 - **Cycle-accurate PPU** (graphics) (with rough edges)
 - Partially implemented cycle-accurate **APU** (sound) (with rough edges)
 - Multiple **save states**
 - Implemented mappers: 0, 2
+- Barebones GUI (with debugging windows showing the internal PPU state)
 
 ## Based on
 
