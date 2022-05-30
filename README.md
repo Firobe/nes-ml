@@ -48,7 +48,7 @@ Note that the `N` for save states must be 1, 2 or 3.
 
 ## Development status
 
-- **Cycle-accute CPU** (see [`6502-ml`](https://github.com/Firobe/6502-ml))
+- **Cycle-accurate CPU** (see [`6502-ml`](https://github.com/Firobe/6502-ml))
 - **Cycle-accurate PPU** (graphics) (with rough edges)
 - Partially implemented cycle-accurate **APU** (sound) (with rough edges)
 - Multiple **save states**
