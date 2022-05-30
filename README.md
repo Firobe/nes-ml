@@ -32,8 +32,8 @@ Use : `nes PATH_TO_ROM`
 
 | Function | Keyboard key |
 | --- | --- |
-| A button | s |
-| B button | d |
+| A button | S |
+| B button | D |
 | Left arrow | ← |
 | Right arrow | → |
 | Up arrow | ↑ |
