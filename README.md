@@ -15,21 +15,30 @@ I recommend using a build with `flambda` activated for more performance.
 ## Usage
 
 Use : `nes PATH_TO_ROM`  
-Hard-coded controls :
-- A : s
-- B : d
-- Arrows : arrows
-- Start : return
-- Select : backspace
-- Toggle debugging windows: home
-- Save state in slot 1/2/3: 1/2/3
-- Load state from slot 1/2/3: Shift+1/2/3
+
+### Controls (hard-coded)
+
+| Function | Keyboard key |
+| --- | --- |
+| A button | s |
+| B button | d |
+| Left arrow | ← |
+| Right arrow | → |
+| Up arrow | ↑ |
+| Down arrow | ↓ |
+| Start | ⏎ (return) |
+| Select | ⌫ (backspace) |
+| Save state in slot `N` | `N` |
+| Load state from slot `N` | Shift+`N` |
+| Toggle debugging windows | Home |
+
+Note that the `N` for save states must be 1, 2 or 3.
 
 ## Development status
 
 - Barebones GUI (with debugging windows showing the internal PPU state)
-- Cycle-accute CPU (see [`6502-ml`](https://github.com/Firobe/6502-ml))
-- Cycle-accurate PPU (with rough edges)
-- Partially implemented cycle-accurate APU (with rough edges)
-- Multipke save states
+- **Cycle-accute CPU** (see [`6502-ml`](https://github.com/Firobe/6502-ml))
+- **Cycle-accurate PPU** (graphics) (with rough edges)
+- Partially implemented cycle-accurate **APU** (sound) (with rough edges)
+- Multiple **save states**
 - Implemented mappers: 0, 2
