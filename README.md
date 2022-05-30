@@ -1,12 +1,15 @@
 # NES-ml
 
-Needs two unreleased libraries to be installed:
+Based on two unreleased libraries:
 - separate CPU library: [`6502-ml`](https://github.com/Firobe/6502-ml)
 - fixed-size int literals: [`stdint-literals`](https://github.com/Firobe/ocaml-stdint-literals)
 
 ## Build & Install
 
-Run `opam install .` or just `dune build`. The executable name is simply `nes`.
+Run `opam install .`. This will fetch the unreleased libraries, build and
+install the emulator.
+
+The executable name is `nes-ml`.
 I recommend using a build with `flambda` activated for more performance.
 
 ## Usage
