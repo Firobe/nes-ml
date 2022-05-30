@@ -1,5 +1,5 @@
 (lang dune 3.0)
-(name NES-ml)
+(name nes-ml)
 
 ; (version 1.0.0)
 
@@ -11,7 +11,7 @@
 (maintainers "virgile.robles@pm.me")
 
 (package
-  (name NES-ml)
+  (name nes-ml)
   (synopsis "Experimental NES emulator")
   (description "Experimental NES emulator")
   (depends

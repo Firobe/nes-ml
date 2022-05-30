@@ -1,4 +1,4 @@
-# NES-ml
+# nes-ml
 
 Based on two unreleased libraries:
 - separate CPU library: [`6502-ml`](https://github.com/Firobe/6502-ml)
