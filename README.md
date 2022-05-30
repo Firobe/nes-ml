@@ -1,5 +1,11 @@
 # nes-ml
 
+<p float="center">
+  <img alt="Mario Bros" src="screens/mario_bros.png" width="30%"/>
+  <img alt="Metal Gear" src="screens/metal_gear.png" width="30%"/>
+  <img alt="Prince of Persia" src="screens/prince_of_persia.png" width="30%"/>
+</p>
+
 ## Build & Install
 
 Assuming you have `opam` installed with an existing switch, either:
