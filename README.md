@@ -26,7 +26,7 @@ Note: I recommend using a build with `flambda` activated for more performance.
 
 ## Usage
 
-Use : `nes PATH_TO_ROM`  
+Use : `nes-ml PATH_TO_ROM`  
 
 ### Controls (hard-coded)
 
