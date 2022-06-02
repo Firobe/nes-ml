@@ -95,7 +95,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
       try
         let save_name = Rom.Save_file.make_name t.state.rom slot in
         let chan = open_out_bin save_name in
-        Marshal.(to_channel chan t.state [Closures]);
+        Marshal.(to_channel chan t.state []);
         close_out chan
       with
       | Sys_error err -> Printf.printf "Cannot save state: %s\n%!" err
@@ -118,9 +118,8 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
            probably saved with a different version of the emulator.\n%!" msg
   end
 
-  let create ({apu; rom; ppu} : devices) collector =
-    let cpu = NES.create ~collector {apu; rom; ppu} in
-    Ppu.set_interrupt ppu (fun () -> NES.nmi cpu);
+  let create ({apu; rom; ppu} : devices) collector nmi =
+    let cpu = NES.create ~collector ~nmi {apu; rom; ppu} in
     load_rom_memory ppu rom;
     NES.Register.set (NES.registers cpu) `S 0xFDu ;
     NES.Register.set (NES.registers cpu) `P 0x34u ;
@@ -169,18 +168,19 @@ let () =
     Printf.printf "No ROM provided\n"
   ) else (
     let collector = C6502.IRQ_collector.create () in
+    let nmi = C6502.NMI.create () in
     let rom = Rom.load Sys.argv.(1) in
     let apu = Apu.create collector in
     let mirroring = if rom.config.mirroring then Ppu.Vertical else
         Ppu.Horizontal in
-    let ppu = Ppu.create mirroring in
+    let ppu = Ppu.create mirroring nmi in
     let mapper = Mapper.find rom in
     (* Create the CPU from the Mapper and ROM *)
     let module Mapper = (val mapper : Mapper.S) in
     let module Memory_Map = Build_NES(Mapper) in
     let module NES = C6502.Make (Memory_Map) in
     let module System = Main(NES) in
-    let state = System.create {rom; apu; ppu} collector in
+    let state = System.create {rom; apu; ppu} collector nmi in
     begin try
         System.run state
       with C6502.Invalid_instruction (addr, opcode) ->

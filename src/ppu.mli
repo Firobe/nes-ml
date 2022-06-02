@@ -7,9 +7,8 @@ type mirroring_kind =
   | Single
   | Quad
 
-val create : mirroring_kind -> t
+val create : mirroring_kind -> C6502.NMI.t -> t
 val init_memory : t -> uint8 array -> int -> unit
-val set_interrupt : t -> (unit -> unit) -> unit
 
 val frame : t -> int
 val get_register : t -> int -> uint8

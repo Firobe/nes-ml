@@ -289,26 +289,24 @@ type t = {
   graphics : Graphics.t;
   status : Status.t;
   rendering : Rendering.t;
-  mutable interrupt_cpu : unit -> unit;
+  nmi : C6502.NMI.t;
   mutable fine_x_scroll : U8.t;
   mutable vram_buffer : U8.t;
 }
 
-let create mirroring_mode = {
+let create mirroring_mode nmi = {
   memory = Mem.create mirroring_mode;
   oam = OAM.create ();
   control = Control.create ();
   graphics = Graphics.create ();
   status = Status.create ();
   rendering = Rendering.create ();
-  interrupt_cpu = (fun () -> failwith "PPU interrupt not initialized");
+  nmi;
   (* Scrolling *)
   fine_x_scroll = 0u;
   (* Latch for PPUSCROLL and PPUADDR *)
   vram_buffer = 0u;
 }
-
-let set_interrupt t f = t.interrupt_cpu <- f
 
 let init_memory t src size =
   Array.blit src 0 t.memory.main 0x0 size
@@ -337,7 +335,8 @@ let set_register t register (v : U8.t) =
     t.control.nmi_enabled <- nth_bit v 7;
     (* If NMI enabled during VBLANK, interrupt now *)
     if t.control.nmi_enabled && not old_nmi
-       && t.status.vblank_enabled && not t.status.vbl_read then t.interrupt_cpu ()
+       && t.status.vblank_enabled && not t.status.vbl_read then
+      C6502.NMI.pull t.nmi
   | 1 -> (* Mask register *)
     t.graphics.greyscale <- nth_bit v 0;
     t.graphics.background_leftmost <- nth_bit v 1;
@@ -784,7 +783,7 @@ module R = struct
     else if r.scanline = 241 && r.cycle = 1 then (
       if not t.status.vbl_read then t.status.vblank_enabled <- true;
       if t.control.nmi_enabled && not t.status.vbl_read then
-        t.interrupt_cpu ()
+        C6502.NMI.pull t.nmi
     )
     (* Last vertical blanking lines : IDLE *)
     else if r.scanline <= 260 then ()
