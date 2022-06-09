@@ -504,6 +504,53 @@ module Frame_counter = struct
     )
 end
 
+module Resampler = struct
+  let target_queue_size = 4048.
+  let offset_trigger_multiplier = 0.5
+  let max_allowed =
+    target_queue_size +. target_queue_size *. offset_trigger_multiplier
+    |> Float.to_int
+  let min_allowed = 
+    target_queue_size -. target_queue_size *. offset_trigger_multiplier
+    |> Float.to_int
+
+  type t = {
+    divider : Divider.t;
+    base_period : int;
+    mutable delta : int;
+    device : int32;
+  }
+
+  let check t =
+    let current = Sdl.get_queued_audio_size t.device in
+    if current >= max_allowed then `Overflow
+    else if current <= min_allowed then `Underflow
+    else `OK
+
+  (* to be adjusted dynamically *)
+  let sampling_period ~sampling_freq = cpu_freq / sampling_freq
+
+  let set_length t =
+    Divider.set_length t.divider (t.base_period + t.delta)
+
+  let create sampling_freq device = 
+    let base_period = (sampling_period ~sampling_freq) - 1 in
+    {divider = Divider.create base_period; base_period; delta = 0; device}
+
+  let clock t =
+    if Divider.clock t.divider then (
+      let new_delta = 
+        match check t with
+        | `OK -> 0
+        | `Overflow -> 1
+        | `Underflow -> -1
+      in
+      t.delta <- new_delta;
+      set_length t;
+      true
+    ) else false
+end
+
 module APU = struct
   type audio_backend = {
     device : int32;
@@ -515,7 +562,7 @@ module APU = struct
     pulse1 : Pulse.t;
     pulse2 : Pulse.t;
     triangle : Triangle.t;
-    resampler : Divider.t;
+    resampler : Resampler.t;
     half_clock : Divider.t;
     noise : Noise.t;
     dmc : DMC.t;
@@ -523,15 +570,12 @@ module APU = struct
     collector : C6502.IRQ_collector.t
   }
 
-  (* to be adjusted dynamically *)
-  let sampling_period b = cpu_freq / b.sampling_freq
-
   let create backend collector = {
     frame_counter = Frame_counter.create ();
     pulse1 = Pulse.create Sweep.Pulse1;
     pulse2 = Pulse.create Sweep.Pulse2;
     triangle = Triangle.create ();
-    resampler = Divider.create (sampling_period backend - 1);
+    resampler = Resampler.create backend.sampling_freq backend.device;
     half_clock = Divider.create 1;
     noise = Noise.create ();
     dmc = DMC.create ();
@@ -624,7 +668,7 @@ module APU = struct
       Noise.clock t.noise
     );
     Triangle.clock t.triangle;
-    if Divider.clock t.resampler then push_sample t
+    if Resampler.clock t.resampler then push_sample t
 
   let exit t = Sdl.close_audio_device t.backend.device
 end
