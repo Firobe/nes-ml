@@ -1,4 +1,7 @@
+(** Read binary iNES ROMS from files *)
+
 exception Invalid_ROM of string
+(** Thrown if the given ROM is either ill-formed or unsupported. *)
 
 type rom_config = {
   prg_rom_size : int;
@@ -14,10 +17,11 @@ type rom_config = {
   mapper_nb : int;
   tv_system : bool;
 }
+(** The various iNES header attributes *)
 
 type t = {
   file_name : string;
-  hash : string;
+  hash : string; (** Truncated MD5 hash of the ROM payload *)
   config : rom_config;
   prg_rom : int array;
   chr_rom : int array;
@@ -25,7 +29,9 @@ type t = {
 }
 
 val load : string -> t
+(** Load a ROM from a file path *)
 
+(** Save states filename generation, with three slots *)
 module Save_file : sig
   type slot = S1 | S2 | S3
   val make_name : t -> slot -> string
