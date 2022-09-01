@@ -4,4 +4,4 @@
  (package nes-ml)
  (preprocess
   (pps stdint-literals))
- (libraries 6502-ml tsdl stdint fpath digestif str cmdliner))
+ (libraries 6502-ml tsdl stdint fpath digestif str cmdliner bogue))

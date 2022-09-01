@@ -11,16 +11,6 @@ open Infix_int.Common
  * - Some more details on rendering : https://fceux.com/web/help/PPU.html
  *)
 
-let palette = 
-    [0x7C7C7C; 0x0000FC; 0x0000BC; 0x4428BC; 0x940084; 0xA80020; 0xA81000; 0x881400;
-     0x503000; 0x007800; 0x006800; 0x005800; 0x004058; 0x000000; 0x000000; 0x000000;
-     0xBCBCBC; 0x0078F8; 0x0058F8; 0x6844FC; 0xD800CC; 0xE40058; 0xF83800; 0xE45C10;
-     0xAC7C00; 0x00B800; 0x00A800; 0x00A844; 0x008888; 0x000000; 0x000000; 0x000000;
-     0xF8F8F8; 0x3CBCFC; 0x6888FC; 0x9878F8; 0xF878F8; 0xF85898; 0xF87858; 0xFCA044;
-     0xF8B800; 0xB8F818; 0x58D854; 0x58F898; 0x00E8D8; 0x787878; 0x000000; 0x000000;
-     0xFCFCFC; 0xA4E4FC; 0xB8B8F8; 0xD8B8F8; 0xF8B8F8; 0xF8A4C0; 0xF0D0B0; 0xFCE0A8;
-     0xF8D878; 0xD8F878; 0xB8F8B8; 0xB8F8D8; 0x00FCFC; 0xF8D8F8; 0x000000; 0x000000]
-
 let int_of_bool b = if b then 1 else 0
 let nth_bit b n = U8.(b $& (1u $<< n) <> 0u)
 let reverse_byte b =
@@ -292,6 +282,7 @@ type t = {
   nmi : C6502.NMI.t;
   mutable fine_x_scroll : U8.t;
   mutable vram_buffer : U8.t;
+  mutable should_render : [`No | `Yes of Stdint.uint8] 
 }
 
 let create mirroring_mode nmi = {
@@ -306,6 +297,7 @@ let create mirroring_mode nmi = {
   fine_x_scroll = 0u;
   (* Latch for PPUSCROLL and PPUADDR *)
   vram_buffer = 0u;
+  should_render = `No
 }
 
 let init_memory t src size =
@@ -430,7 +422,7 @@ module R = struct
       let address =
         U16.(pal_start + (u16of8 palette_nb) * 4U + (u16of8 color_nb)) in
       let color = Mem.get t.memory address in
-      Display.set_pixel disp ~x:(U8.to_int x) ~y:(U8.to_int y) ~color
+      Display.set_pixel Gui.(disp.display) ~x:(U8.to_int x) ~y:(U8.to_int y) ~color
 
   let copy_bits_16 ~src ~dst mask =
     let open U16 in
@@ -744,8 +736,7 @@ module R = struct
     else if r.cycle = 340 then (
       t.status.sprite_0_hit <- false ; 
       r.frame <- r.frame + 1;
-      Display.render disp;
-      Display.clear disp t.memory.main.(0x3F00);
+      t.should_render <- `Yes t.memory.main.(0x3F00);
       (* this should be at cycle 1 *)
       (* Odd frame : jump to (0, 0) directly *)
       if (r.frame mod 2) = 1 && Graphics.is_rendering t.graphics then (
@@ -792,14 +783,10 @@ module R = struct
     increment_cycle t
 end
 
-module Window = struct
-  let create () =
-    Display.create ~width:256 ~height:240 ~scale:4 ~palette "NES"
-
-  let exit t =
-    Display.delete t;
-    Display.exit ()
-end
+let should_render t =
+  let old = t.should_render in
+  t.should_render <- `No;
+  old
 
 let next_cycle = R.next_cycle
 
@@ -811,6 +798,7 @@ module Debug = struct
     mutable counter : int;
   }
 
+  let palette = Ppu_display.palette
   let pal_4 = [0x000000; 0xFF0000; 0x00FF00; 0x0000FF]
 
   let create () = {

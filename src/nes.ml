@@ -83,7 +83,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
   }
   type io = {
     mutable debug : Ppu.Debug.t option;
-    main : Display.t;
+    main_window : Gui.t
   }
   type t = {
     mutable state : state;
@@ -128,7 +128,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     let state = {cpu; apu; ppu; rom; collector} in
     let io = {
       debug = None;
-      main = Ppu.Window.create ()
+      main_window = Gui.create ()
     } in {state; io}
 
   let debug_callback t () =
@@ -139,27 +139,51 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
       Ppu.Debug.delete d; t.io.debug <- None
 
   let run t =
+    (* When the GUI is enabled, wait until the current NES frame is drawn before
+       pausing, to avoid having a partial image *)
+    let enable_gui_at_next_frame = ref false in
     let callbacks = Input.{
-      debug = debug_callback t;
-      save_state = Save_state.save t;
-      load_state = Save_state.load t;
-    } in
+        toggle_debug = debug_callback t;
+        save_state = Save_state.save t;
+        load_state = Save_state.load t;
+        toggle_gui = fun () -> enable_gui_at_next_frame := true
+      } in
     let rec aux frame =
-      if frame mod 100 = 0 then (Input.get_inputs callbacks);
-      if Input.continue () then (
-        let old = NES.cycle_count t.state.cpu in
-        NES.next_cycle t.state.cpu;
-        let elapsed = NES.cycle_count t.state.cpu - old in
-        n_times (fun () -> Apu.next_cycle t.state.apu) elapsed;
-        n_times (fun () -> Ppu.next_cycle t.state.ppu t.io.main) (elapsed * 3);
-        Ppu.Debug.render t.state.ppu t.io.debug;
-        aux (frame + 1)
+      if t.io.main_window.state.continue then (
+        (* Stop emulation when GUI is displayed, and don't collect inputs *)
+        if t.io.main_window.state.gui_shown then (
+          Gui.render t.io.main_window;
+          aux (frame + 1)
+        )
+        (* Normal emulation *)
+        else (
+          if frame mod 100 = 0 then (Input.get_inputs callbacks);
+          let old = NES.cycle_count t.state.cpu in
+          NES.next_cycle t.state.cpu;
+          let elapsed = NES.cycle_count t.state.cpu - old in
+          n_times (fun () -> Apu.next_cycle t.state.apu) elapsed;
+          n_times (fun () -> Ppu.next_cycle t.state.ppu t.io.main_window) (elapsed * 3);
+          begin match Ppu.should_render t.state.ppu with
+          | `No -> ()
+          | `Yes bg_color -> (
+              let disp = t.io.main_window.display in
+              Display.render disp;
+              if !enable_gui_at_next_frame then (
+                Gui.toggle_gui t.io.main_window ();
+                enable_gui_at_next_frame := false
+              )
+              else Display.clear disp bg_color
+            )
+          end;
+          Ppu.Debug.render t.state.ppu t.io.debug;
+          aux (frame + 1)
+        )
       )
     in aux 0
 
   let close_io {io; state; _} =
     Apu.exit state.apu;
-    Ppu.Window.exit io.main
+    Gui.exit io.main_window
 end
 
 let run filename =

@@ -15,6 +15,7 @@ depends: [
   "fpath"
   "digestif"
   "cmdliner"
+  "bogue"
   "dune" {>= "3.0" & build}
   "odoc" {with-doc}
 ]

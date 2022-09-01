@@ -29,14 +29,10 @@ val dma : t -> (uint16 -> uint8) -> uint16 -> unit
 (** Direct Memory Access: given the PPU, a function to read from CPU addresses
     and a starting PPU address, blit the memory *)
 
-val next_cycle : t -> Display.t -> unit
+val next_cycle : t -> Gui.t -> unit
 (** Emulate next cycle of the PPU *)
 
-(** Create and destroy the window dedicated to the PPU rendering *)
-module Window : sig
-  val create : unit -> Display.t
-  val exit : Display.t -> unit
-end
+val should_render : t -> [`No | `Yes of uint8]
 
 (** Create and destroy the windows dedicated to the PPU debugging *)
 module Debug : sig

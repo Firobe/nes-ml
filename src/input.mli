@@ -10,7 +10,8 @@ module Keys : sig
     | Up
     | Start
     | Select
-    | Debug
+    | Toggle_debug
+    | Toggle_gui
     | Save_state of Rom.Save_file.slot
     | Load_state of Rom.Save_file.slot
 end
@@ -27,7 +28,8 @@ val continue : unit -> bool
 (** The game loop should continue *)
 
 type callbacks = {
-  debug : unit -> unit;
+  toggle_debug : unit -> unit;
+  toggle_gui : unit -> unit;
   save_state : Rom.Save_file.slot -> unit;
   load_state : Rom.Save_file.slot -> unit;
 }

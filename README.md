@@ -40,6 +40,7 @@ Use : `nes-ml PATH_TO_ROM`
 | Down arrow | ↓ |
 | Start | ⏎ (return) |
 | Select | ⌫ (backspace) |
+| Toggle GUI | Tab |
 | Save state in slot `N` | `N` |
 | Load state from slot `N` | Shift+`N` |
 | Toggle debugging windows | Home |

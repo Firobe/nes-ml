@@ -16,7 +16,10 @@ val delete : t -> unit
 val clear : t -> Stdint.uint8 -> unit
 (** Fill the buffer with the given color *)
 
+val get_window : t -> Tsdl.Sdl.window
+(** Retrieve SDL window *)
+
 val set_pixel : t -> x:int -> y:int -> color:Stdint.uint8 -> unit
 
-val render : t -> unit
+val render : ?after : (unit -> unit) -> t -> unit
 (** Refresh the displayed buffer *)

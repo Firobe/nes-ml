@@ -10,7 +10,8 @@ module Keys = struct
     | Up
     | Start
     | Select
-    | Debug
+    | Toggle_debug
+    | Toggle_gui
     | Save_state of Rom.Save_file.slot
     | Load_state of Rom.Save_file.slot
 
@@ -27,14 +28,16 @@ type binding = {
 (* Hardcoded, for now *)
 let bindings =
   let open Sdl.K in
+  (* Bare key *)
   let b k = {key = k; kmod = Sdl.Kmod.none} in
+  (* Key with shift modifier *)
   let shift k = {key = k; kmod = Sdl.Kmod.lshift} in
   let open Keys in
   [(A, b s); (B, b d); (Right, b right); (Left, b left);
    (Down, b down); (Up, b up); (Start, b return); (Select, b backspace);
-   (Debug, b home); (Save_state S1, b k1); (Save_state S2, b k2);
+   (Toggle_debug, b home); (Save_state S1, b k1); (Save_state S2, b k2);
    (Save_state S3, b k3); (Load_state S1, shift k1); (Load_state S2, shift k2);
-   (Load_state S3, shift k3)]
+   (Load_state S3, shift k3); (Toggle_gui, b tab)]
   |> List.to_seq
   |> Keymap.of_seq
 
@@ -50,7 +53,8 @@ type t = {
 }
 
 type callbacks = {
-  debug : unit -> unit;
+  toggle_debug : unit -> unit;
+  toggle_gui : unit -> unit;
   save_state : Rom.Save_file.slot -> unit;
   load_state : Rom.Save_file.slot -> unit;
 }
@@ -79,7 +83,8 @@ let get_inputs (c : callbacks) =
           let kmod = Event.get event Event.keyboard_keymod in
           let binding = {key; kmod} in
           begin match reverse_binding binding with
-            | Some Debug -> c.debug ()
+            | Some Toggle_debug -> c.toggle_debug ()
+            | Some Toggle_gui -> c.toggle_gui ()
             | Some Save_state slot -> c.save_state slot
             | Some Load_state slot -> c.load_state slot
             | _ -> ()

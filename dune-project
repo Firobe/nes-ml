@@ -22,4 +22,5 @@
     fpath
     digestif
     cmdliner
+    bogue
     (dune :build)))
