@@ -162,31 +162,48 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
     Ppu.Window.exit io.main
 end
 
+let run filename =
+  let collector = C6502.IRQ_collector.create () in
+  let nmi = C6502.NMI.create () in
+  let rom = Rom.load filename in
+  let apu = Apu.create collector in
+  let mirroring = if rom.config.mirroring then Ppu.Vertical else
+      Ppu.Horizontal in
+  let ppu = Ppu.create mirroring nmi in
+  let mapper = Mapper.find rom in
+  (* Create the CPU from the Mapper and ROM *)
+  let module Mapper = (val mapper : Mapper.S) in
+  let module Memory_Map = Build_NES(Mapper) in
+  let module NES = C6502.Make (Memory_Map) in
+  let module System = Main(NES) in
+  let state = System.create {rom; apu; ppu} collector nmi in
+  begin try
+      System.run state
+    with C6502.Invalid_instruction (addr, opcode) ->
+      Format.printf
+        "The CPU encountered an invalid instruction %a at address %a.\n"
+        C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
+  end ;
+  System.close_io state
 
-let () =
-  if Array.length Sys.argv <= 1 then (
-    Printf.printf "No ROM provided\n"
-  ) else (
-    let collector = C6502.IRQ_collector.create () in
-    let nmi = C6502.NMI.create () in
-    let rom = Rom.load Sys.argv.(1) in
-    let apu = Apu.create collector in
-    let mirroring = if rom.config.mirroring then Ppu.Vertical else
-        Ppu.Horizontal in
-    let ppu = Ppu.create mirroring nmi in
-    let mapper = Mapper.find rom in
-    (* Create the CPU from the Mapper and ROM *)
-    let module Mapper = (val mapper : Mapper.S) in
-    let module Memory_Map = Build_NES(Mapper) in
-    let module NES = C6502.Make (Memory_Map) in
-    let module System = Main(NES) in
-    let state = System.create {rom; apu; ppu} collector nmi in
-    begin try
-        System.run state
-      with C6502.Invalid_instruction (addr, opcode) ->
-        Format.printf
-          "The CPU encountered an invalid instruction %a at address %a.\n"
-          C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr
-    end ;
-    System.close_io state
-  )
+module Command_line = struct
+  open Cmdliner
+  let rom_arg =
+    let doc = "Path to the ROM to run." in
+    Arg.(required & pos 0 (some file) None & info [] ~docv:"ROM_PATH" ~doc)
+
+  let run_term = Term.(const run $ rom_arg)
+
+  let cmd =
+    let doc = "experimental NES emulator written in OCaml" in
+    let man = [
+      `S Manpage.s_bugs;
+      `P "File bug reports at https://github.com/Firobe/nes-ml" ]
+    in
+    let info = Cmd.info "nes-ml" ~doc ~man in
+    Cmd.v info run_term
+
+  let go () = exit (Cmd.eval cmd)
+end
+
+let () = Command_line.go ()

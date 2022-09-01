@@ -21,4 +21,5 @@
     stdint-literals
     fpath
     digestif
+    cmdliner
     (dune :build)))
