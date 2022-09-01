@@ -1,13 +1,24 @@
 (rule
-  (target dune-linker)
-  (enabled_if %{bin-available:lld})
-  (action (with-stdout-to dune-linker (echo "lld"))))
+ (target dune-linker)
+ (enabled_if %{bin-available:lld})
+ (action
+  (with-stdout-to
+   dune-linker
+   (echo "lld"))))
 
 (rule
-  (target dune-linker)
-  (enabled_if (= %{bin-available:lld} false))
-  (action (with-stdout-to dune-linker (echo "bfd"))))
+ (target dune-linker)
+ (enabled_if
+  (= %{bin-available:lld} false))
+ (action
+  (with-stdout-to
+   dune-linker
+   (echo "bfd"))))
 
 (env
-  (_ (flags (:standard -ccopt=-fuse-ld=%{read:dune-linker})))
-  (_ (ocamlopt_flags (:standard -O3))))
+ (dev
+  (flags
+   (:standard -ccopt=-fuse-ld=%{read:dune-linker})))
+ (dev
+  (ocamlopt_flags
+   (:standard -O3))))
