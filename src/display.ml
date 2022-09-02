@@ -58,7 +58,7 @@ module FPS = struct
     if now < !next_time then (
       let to_wait = Int64.((!next_time - now) * 1000L / cps) |> Int32.of_int64 in
       Sdl.delay to_wait
-    );
+    ) else (next_time := now);
     next_time := Int64.(!next_time + delta)
 end
 
