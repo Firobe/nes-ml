@@ -37,7 +37,7 @@ let bindings =
    (Down, b down); (Up, b up); (Start, b return); (Select, b backspace);
    (Toggle_debug, b home); (Save_state S1, b k1); (Save_state S2, b k2);
    (Save_state S3, b k3); (Load_state S1, shift k1); (Load_state S2, shift k2);
-   (Load_state S3, shift k3); (Toggle_gui, b tab)]
+   (Load_state S3, shift k3); (Toggle_gui, b escape)]
   |> List.to_seq
   |> Keymap.of_seq
 
@@ -67,9 +67,6 @@ let key_pressed key =
   let {key; _} = Keymap.find key bindings in
   let scancode = Sdl.get_scancode_from_key key in
   state.{scancode} != 0
-
-let continue () =
-  state.{Sdl.Scancode.escape} == 0
 
 let get_inputs (c : callbacks) =
   let open Sdl in

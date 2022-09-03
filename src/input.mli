@@ -24,9 +24,6 @@ val create : unit -> t
 val next_register : t -> Stdint.uint8
 (** Value of the next input register for the NES *)
 
-val continue : unit -> bool
-(** The game loop should continue *)
-
 type callbacks = {
   toggle_debug : unit -> unit;
   toggle_gui : unit -> unit;
