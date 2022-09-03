@@ -148,6 +148,8 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
         load_state = Save_state.load t;
         toggle_gui = fun () -> enable_gui_at_next_frame := true
       } in
+    t.io.main_window.callbacks.save_state <- Save_state.save t;
+    t.io.main_window.callbacks.load_state <- Save_state.load t;
     let rec aux frame =
       if t.io.main_window.state.continue then (
         (* Stop emulation when GUI is displayed, and don't collect inputs *)

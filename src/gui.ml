@@ -10,24 +10,30 @@ type state = {
 
 type gui = Main.board
 
+type callbacks = {
+  mutable exit : unit -> unit;
+  mutable save_state : Rom.Save_file.slot -> unit;
+  mutable load_state : Rom.Save_file.slot -> unit;
+}
+
 type t = {
   board : gui;
   display : Display.t;
   start : unit -> unit;
   fps : unit -> unit;
-  state : state
-}
-
-type callbacks = {
-  exit : unit -> unit;
+  state : state;
+  callbacks : callbacks;
 }
 
 let create_board window callbacks =
   let dummy () = Printf.printf "GUI action not implemented yet!\n%!" in
-  let states_entries = Menu.Flat [
-      {label = Text "Slot 1"; content = Action dummy};
-      {label = Text "Slot 2"; content = Action dummy};
-      {label = Text "Slot 3"; content = Action dummy};
+  let exit () = raise Bogue.Exit in
+  let save_call slot () = (callbacks.save_state slot; exit ()) in
+  let load_call slot () = (callbacks.load_state slot; exit ()) in
+  let state_entries f = Menu.Flat Rom.Save_file.[
+      {label = Text "Slot 1"; content = Action (f S1)};
+      {label = Text "Slot 2"; content = Action (f S2)};
+      {label = Text "Slot 3"; content = Action (f S3)}
     ] in
   let entries = Menu.[
       {label = Text "Emulation"; content = Tower [
@@ -35,8 +41,8 @@ let create_board window callbacks =
            {label = Text "Quit"; content = Action callbacks.exit}
          ]};
       {label = Text "State"; content = Tower [
-           {label = Text "Save state"; content = states_entries};
-           {label = Text "Load state"; content = states_entries}
+           {label = Text "Save state"; content = state_entries save_call};
+           {label = Text "Load state"; content = state_entries load_call}
          ]};
       {label = Text "Settings"; content = Tower [
            {label = Text "Control mapping"; content = Action dummy};
@@ -63,10 +69,12 @@ let create () =
   } in
   let window = Display.get_window display in
   let callbacks = {
-    exit = fun () -> state.continue <- false
+    exit = (fun () -> state.continue <- false);
+    save_state = (fun _ -> Printf.printf "Dummy save\n");
+    load_state = (fun _ -> Printf.printf "Dummy load\n")
   } in
   let board, start, fps = create_board window callbacks in
-  {board; start; fps; state; display}
+  {board; start; fps; state; display; callbacks}
 
 let render_gui t =
   try

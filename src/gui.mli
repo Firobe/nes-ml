@@ -8,16 +8,19 @@ type state = {
 
 type gui
 
+type callbacks = {
+  mutable exit : unit -> unit;
+  mutable save_state : Rom.Save_file.slot -> unit;
+  mutable load_state : Rom.Save_file.slot -> unit;
+}
+
 type t = {
   board : gui;
   display : Display.t;
   start : unit -> unit;
   fps : unit -> unit;
-  state : state
-}
-
-type callbacks = {
-  exit : unit -> unit;
+  state : state;
+  callbacks : callbacks;
 }
 
 val create : unit -> t
