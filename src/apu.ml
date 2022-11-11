@@ -9,6 +9,9 @@ let cpu_freq = 1789773
 let main_divider = 89490 (* to obtain frame counter *)
 let cpu_divider = main_divider / (master_freq / cpu_freq)
 
+(* Adjust overall output volume *)
+let volume_modifier = 0.1
+
 module Divider = struct
   type t = {
     mutable length : int;
@@ -505,50 +508,60 @@ module Frame_counter = struct
 end
 
 module Resampler = struct
-  let target_queue_size = 4048.
-  let offset_trigger_multiplier = 0.5
-  let max_allowed =
-    target_queue_size +. target_queue_size *. offset_trigger_multiplier
-    |> Float.to_int
-  let min_allowed = 
-    target_queue_size -. target_queue_size *. offset_trigger_multiplier
-    |> Float.to_int
+  let _target_queue_size = 8192.
+
 
   type t = {
-    divider : Divider.t;
     base_period : int;
     mutable delta : int;
     device : int32;
+    mutable fb : float array; (* frame buffer *)
+    mutable fb_length : int;
   }
 
+  (* enough to store raw samples for one frame at 44100 Hz *)
+  let fb_capacity = 32768
+
+  (*
   let check t =
     let current = Sdl.get_queued_audio_size t.device in
     if current >= max_allowed then `Overflow
     else if current <= min_allowed then `Underflow
     else `OK
+     *)
 
   (* to be adjusted dynamically *)
   let sampling_period ~sampling_freq = cpu_freq / sampling_freq
 
-  let set_length t =
-    Divider.set_length t.divider (t.base_period + t.delta)
-
   let create sampling_freq device = 
     let base_period = (sampling_period ~sampling_freq) - 1 in
-    {divider = Divider.create base_period; base_period; delta = 0; device}
+    {
+      base_period;
+      delta = 0;
+      device;
+      fb = Array.create_float fb_capacity;
+      fb_length = 0;
+    }
 
-  let clock t =
-    if Divider.clock t.divider then (
-      let new_delta = 
-        match check t with
-        | `OK -> 0
-        | `Overflow -> 1
-        | `Underflow -> -1
-      in
-      t.delta <- new_delta;
-      set_length t;
-      true
-    ) else false
+  let buffer_next t value =
+    if t.fb_length < fb_capacity then (
+      t.fb.(t.fb_length) <- value;
+      t.fb_length <- t.fb_length + 1
+    ) else Printf.printf "oskour\n%!"
+
+  let decimate rate samples length =
+    let length' = length / rate in
+    let res =
+      Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout length' in
+    for i = 0 to length' - 1 do
+      res.{i} <- samples.(i * rate)
+    done;
+    res
+
+  let resample t =
+    let res = decimate t.base_period t.fb t.fb_length in
+    t.fb_length <- 0;
+    res
 end
 
 module APU = struct
@@ -643,20 +656,8 @@ module APU = struct
     let pulse_out = 95.88 /. (8128. /. (pulse1 +. pulse2) +. 100.) in
     let tnd_factor = triangle /. 8227. +. noise /. 12241. +. dmc /. 22638. in
     let tnd_out = 159.79 /. (1. /. tnd_factor +. 100.) in
-    pulse_out +. tnd_out
-
-  let push_sample =
-    let mini_buffer =
-      Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout 1 in
-    fun t -> (
-        let value = mixer t in (* [0. - 1. ] *)
-        mini_buffer.{0} <- value;
-        match Sdl.queue_audio t.backend.device mini_buffer with
-        | Ok () -> ()
-        | Error (`Msg e) ->
-          Printf.printf "Error when pushing samples: %s\n" e;
-          assert false
-      )
+    let out_raw = pulse_out +. tnd_out in (* [0. - 1.] *)
+    out_raw *. volume_modifier
 
   let next_cycle t =
     (* Clock pulse timers *)
@@ -668,7 +669,15 @@ module APU = struct
       Noise.clock t.noise
     );
     Triangle.clock t.triangle;
-    if Resampler.clock t.resampler then push_sample t
+    Resampler.buffer_next t.resampler (mixer t)
+
+  let output_frame t =
+    let buffer = Resampler.resample t.resampler in
+    match Sdl.queue_audio t.backend.device buffer with
+    | Ok () -> ()
+    | Error (`Msg e) ->
+      Printf.printf "Error when pushing samples: %s\n" e;
+      assert false
 
   let exit t = Sdl.close_audio_device t.backend.device
 end

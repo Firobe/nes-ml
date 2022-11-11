@@ -169,6 +169,7 @@ module Main (NES : (C6502.CPU with type input := devices)) = struct
           | `No -> ()
           | `Yes bg_color -> (
               let disp = t.io.main_window.display in
+              Apu.output_frame t.state.apu;
               Display.render disp;
               if !enable_gui_at_next_frame then (
                 Gui.toggle_gui t.io.main_window ();
