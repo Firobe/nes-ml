@@ -13,6 +13,9 @@ val create : C6502.IRQ_collector.t -> t
 val next_cycle : t -> unit
 (** Emulate next cycle of the chip *)
 
+val output_frame : t -> unit
+(** Output actual audio to the backend for the last frame *)
+
 val write_register : t -> Stdint.uint8 -> Stdint.uint16 -> unit
 (** Emulate writing a value at an address of the APU *)
 
