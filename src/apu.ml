@@ -510,17 +510,18 @@ end
 module Resampler = struct
   let _target_queue_size = 8192.
 
-
   type t = {
     base_period : int;
-    mutable delta : int;
     device : int32;
-    mutable fb : float array; (* frame buffer *)
+    mutable fb : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t; (* frame buffer *)
     mutable fb_length : int;
+    mutable history : float array; (* 4 last values *)
+    mutable mu : float;
+    mutable ratio : float;
   }
 
-  (* enough to store raw samples for one frame at 44100 Hz *)
-  let fb_capacity = 32768
+  (* enough to store samples for two frames at 44100 Hz *)
+  let fb_capacity = 2048
 
   (*
   let check t =
@@ -537,29 +538,38 @@ module Resampler = struct
     let base_period = (sampling_period ~sampling_freq) - 1 in
     {
       base_period;
-      delta = 0;
       device;
-      fb = Array.create_float fb_capacity;
+      fb = Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout fb_capacity;
       fb_length = 0;
+      history = Array.make 4 0.;
+      mu = 0.;
+      ratio = (float_of_int cpu_freq) /. (float_of_int sampling_freq)
     }
 
-  let buffer_next t value =
+  let append t value = 
     if t.fb_length < fb_capacity then (
-      t.fb.(t.fb_length) <- value;
+      t.fb.{t.fb_length} <- value;
       t.fb_length <- t.fb_length + 1
-    ) else Printf.printf "oskour\n%!"
+    )
 
-  let decimate rate samples length =
-    let length' = length / rate in
-    let res =
-      Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout length' in
-    for i = 0 to length' - 1 do
-      res.{i} <- samples.(i * rate)
+  (* Cubic interpolation *)
+  let buffer_next t value =
+    t.history.(0) <- t.history.(1);
+    t.history.(1) <- t.history.(2);
+    t.history.(2) <- t.history.(3);
+    t.history.(3) <- value;
+    while t.mu <= 1.0 do
+      let a = t.history.(3) -. t.history.(2) -. t.history.(0) +. t.history.(1) in
+      let b = t.history.(0) -. t.history.(1) -. a in
+      let c = t.history.(2) -. t.history.(0) in
+      let d = t.history.(1) in
+      append t (a *. t.mu *. t.mu *. t.mu +. b *. t.mu *. t.mu +. c *. t.mu +. d);
+      t.mu <- t.mu +. t.ratio
     done;
-    res
+    t.mu <- t.mu -. 1.0
 
   let resample t =
-    let res = decimate t.base_period t.fb t.fb_length in
+    let res = Bigarray.Array1.sub t.fb 0 t.fb_length in
     t.fb_length <- 0;
     res
 end
