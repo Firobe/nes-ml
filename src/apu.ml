@@ -1,7 +1,7 @@
 open Infix_int.Common
 open Tsdl
 
-(* TODO: separate backend type from the main state *)
+let dynamic_rate_control = true
 
 (* in Hz *)
 let master_freq = 21477272
@@ -30,27 +30,6 @@ module Divider = struct
       t.counter <- t.counter - 1; false
     )
 end
-(*
-module Float_divider = struct
-  let precision = 4
-  type t = {
-    main_divider : Divider.t;
-
-  }
-  let get_periods f_period =
-    let main_period = int_of_float f_period in
-    let sub_period = 1 in
-
-  let create f_period = {
-    let m, s = get_periods f_period in
-    main_divider = Divider.create m;
-    sub_divider = Divider.create s
-  }
-
-  let clock t =
-    if Divider.clock 
-end
-   *)
 
 module Sequencer = struct
   type t = {
@@ -508,10 +487,8 @@ module Frame_counter = struct
 end
 
 module Resampler = struct
-  let _target_queue_size = 8192.
-
   type t = {
-    base_period : int;
+    sampling_freq : float;
     device : int32;
     mutable fb : (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t; (* frame buffer *)
     mutable fb_length : int;
@@ -523,28 +500,31 @@ module Resampler = struct
   (* enough to store samples for two frames at 44100 Hz *)
   let fb_capacity = 2048
 
-  (*
-  let check t =
-    let current = Sdl.get_queued_audio_size t.device in
-    if current >= max_allowed then `Overflow
-    else if current <= min_allowed then `Underflow
-    else `OK
-     *)
-
-  (* to be adjusted dynamically *)
-  let sampling_period ~sampling_freq = cpu_freq / sampling_freq
-
   let create sampling_freq device = 
-    let base_period = (sampling_period ~sampling_freq) - 1 in
     {
-      base_period;
       device;
       fb = Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout fb_capacity;
       fb_length = 0;
       history = Array.make 4 0.;
       mu = 0.;
+      sampling_freq = float_of_int sampling_freq;
       ratio = (float_of_int cpu_freq) /. (float_of_int sampling_freq)
     }
+
+  (* Return 0. if queue empty 1. if >= max_queue_size *)
+  let fill_level t =
+    let max_queue_size = 8192 in
+    let current = min (Sdl.get_queued_audio_size t.device) max_queue_size in
+    (float_of_int current) /. (float_of_int max_queue_size )
+
+  let update_frequency t =
+    let max_delta = 0.005 in
+    let fill_level = fill_level t in
+    let cpu_freq = float_of_int cpu_freq in
+    let base_ratio = cpu_freq /. t.sampling_freq in
+    let coef = 1. -. max_delta +. 2. *. fill_level *. max_delta in
+    let target_ratio = base_ratio *. coef in
+    t.ratio <- target_ratio
 
   let append t value = 
     if t.fb_length < fb_capacity then (
@@ -571,6 +551,9 @@ module Resampler = struct
   let resample t =
     let res = Bigarray.Array1.sub t.fb 0 t.fb_length in
     t.fb_length <- 0;
+    if dynamic_rate_control then (
+      update_frequency t
+    );
     res
 end
 
