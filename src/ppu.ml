@@ -310,7 +310,7 @@ let frame t = t.rendering.frame
 let increment_ppu_address t =
   t.memory.address <- U16.(t.memory.address + t.control.increment $& 0x3FFFU)
 
-open C6502.Int_utils
+open C6502.Utils
 
 let set_register t register (v : U8.t) =
   let open U16 in

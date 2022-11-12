@@ -8,13 +8,13 @@ module NROM : S = struct
   let create rom =
     let open Rom in
     let bank_nb = rom.config.prg_rom_size / 0x4000 in
-    if bank_nb = 2 then Array.map C6502.Int_utils.u8 rom.prg_rom
+    if bank_nb = 2 then Array.map C6502.Utils.u8 rom.prg_rom
     else
       let m = Array.make 0x8000 0x00 in
       (* 32K *)
       Array.blit rom.prg_rom 0 m 0 0x4000;
       Array.blit rom.prg_rom 0 m 0x4000 0x4000;
-      Array.map C6502.Int_utils.u8 m
+      Array.map C6502.Utils.u8 m
 
   open U16
 
@@ -33,7 +33,7 @@ module UxROM : S = struct
     for i = 0 to bank_nb - 1 do
       Array.blit rom.prg_rom (0x4000 * i) banks.(i) 0 0x4000
     done;
-    let banks = Array.map (Array.map C6502.Int_utils.u8) banks in
+    let banks = Array.map (Array.map C6502.Utils.u8) banks in
     { banks; selected = 0 }
 
   let last_bank t = t.banks.(Array.length t.banks - 1)

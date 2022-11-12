@@ -1,7 +1,7 @@
 let load_rom_memory ppu rom =
   let open Rom in
   Ppu.init_memory ppu
-    (Array.map C6502.Int_utils.u8 rom.chr_rom)
+    (Array.map C6502.Utils.u8 rom.chr_rom)
     rom.config.chr_rom_size
 
 let rec n_times f n =
@@ -202,7 +202,7 @@ let run filename =
    with C6502.Invalid_instruction (addr, opcode) ->
      Format.printf
        "The CPU encountered an invalid instruction %a at address %a.\n"
-       C6502.Int_utils.pp_u8 opcode C6502.Int_utils.pp_u16 addr);
+       C6502.Utils.pp_u8 opcode C6502.Utils.pp_u16 addr);
   System.close_io state
 
 module Command_line = struct
