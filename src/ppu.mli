@@ -32,12 +32,13 @@ val dma : t -> (uint16 -> uint8) -> uint16 -> unit
 val next_cycle : t -> Gui.t -> unit
 (** Emulate next cycle of the PPU *)
 
-val should_render : t -> [`No | `Yes of uint8]
+val should_render : t -> [ `No | `Yes of uint8 ]
 
 (** Create and destroy the windows dedicated to the PPU debugging *)
 module Debug : sig
   type ppu := t
   type t
+
   val create : unit -> t
   val delete : t -> unit
   val render : ppu -> t option -> unit

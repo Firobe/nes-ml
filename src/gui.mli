@@ -3,7 +3,7 @@
 type state = {
   mutable anim : bool;
   mutable continue : bool;
-  mutable gui_shown : bool
+  mutable gui_shown : bool;
 }
 
 type gui

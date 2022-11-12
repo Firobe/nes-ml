@@ -8,7 +8,8 @@ val init : unit -> unit
 val exit : unit -> unit
 (** Release the backend *)
 
-val create : width:int -> height:int -> scale:int -> palette:int list -> string -> t
+val create :
+  width:int -> height:int -> scale:int -> palette:int list -> string -> t
 (** Create the emulation window with given attributes *)
 
 val delete : t -> unit
@@ -21,5 +22,5 @@ val get_window : t -> Tsdl.Sdl.window
 
 val set_pixel : t -> x:int -> y:int -> color:Stdint.uint8 -> unit
 
-val render : ?after : (unit -> unit) -> t -> unit
+val render : ?after:(unit -> unit) -> t -> unit
 (** Refresh the displayed buffer *)

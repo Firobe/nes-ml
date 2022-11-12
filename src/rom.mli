@@ -21,7 +21,7 @@ type rom_config = {
 
 type t = {
   file_name : string;
-  hash : string; (** Truncated MD5 hash of the ROM payload *)
+  hash : string;  (** Truncated MD5 hash of the ROM payload *)
   config : rom_config;
   prg_rom : int array;
   chr_rom : int array;
@@ -34,6 +34,7 @@ val load : string -> t
 (** Save states filename generation, with three slots *)
 module Save_file : sig
   type slot = S1 | S2 | S3
+
   val make_name : t -> slot -> string
   val find_matching_name : t -> slot -> string option
 end
