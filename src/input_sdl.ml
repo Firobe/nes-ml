@@ -6,6 +6,8 @@ module Keymap = Map.Make (Input.Keys)
 
 type binding = { key : Sdl.keycode; kmod : Sdl.keymod }
 
+let create () = ()
+
 (* Hardcoded, for now *)
 let bindings =
   let open Sdl.K in

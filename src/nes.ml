@@ -163,6 +163,7 @@ struct
           | `Yes bg_color ->
               let disp = t.io.main_window.display in
               Apu.output_frame t.state.apu;
+              I.next_frame t.state.input;
               Display.render disp;
               if !enable_gui_at_next_frame then (
                 Gui.toggle_gui t.io.main_window ();
@@ -178,7 +179,16 @@ struct
     Gui.exit io.main_window
 end
 
-let run filename =
+let input_backend = function
+  | Some path ->
+      let module Movie = struct
+        let file = path
+      end in
+      let module Movie_applied = Input_movie.Make (Movie) in
+      (module Movie_applied : Input.Backend)
+  | None -> (module Input_sdl)
+
+let run filename movie =
   let collector = C6502.IRQ_collector.create () in
   let nmi = C6502.NMI.create () in
   let rom = Rom.load filename in
@@ -187,7 +197,9 @@ let run filename =
     if rom.config.mirroring then Ppu.Vertical else Ppu.Horizontal
   in
   let ppu = Ppu.create mirroring nmi in
-  let module Input = Input.Make (Input_sdl) in
+  let input_backend = input_backend movie in
+  let module Input_backend = (val input_backend : Input.Backend) in
+  let module Input = Input.Make (Input_backend) in
   let input = Input.create () in
   let mapper = Mapper.find rom in
   (* Create the CPU from the Mapper and ROM *)
@@ -210,7 +222,12 @@ module Command_line = struct
     let doc = "Path to the ROM to run." in
     Arg.(required & pos 0 (some file) None & info [] ~docv:"ROM_PATH" ~doc)
 
-  let run_term = Term.(const run $ rom_arg)
+  let movie_arg =
+    let doc = "Optional input file in .fm2 format to be replayed" in
+    let i = Arg.info [ "m"; "movie" ] ~docv:"MOVIE_PATH" ~doc in
+    Arg.(value & opt (some file) None & i)
+
+  let run_term = Term.(const run $ rom_arg $ movie_arg)
 
   let cmd =
     let doc = "experimental NES emulator written in OCaml" in
