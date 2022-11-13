@@ -24,31 +24,42 @@ type callbacks = {
 }
 
 module type Backend = sig
-  val key_pressed : Keys.t -> bool
-  val get_inputs : callbacks -> unit
+  type t
+
+  val key_pressed : t -> Keys.t -> bool
+  val get_inputs : t -> callbacks -> unit
+  val next_frame : t -> unit
 end
 
-type t = {
-  backend : (module Backend);
-  mutable next_key : int;
-}
+module type S = sig
+  type t
+  (** State of the input state machine *)
 
-let create backend = {
-  next_key = 0;
-  backend
-}
+  type backend
 
-let nes_key_order =
-  Array.of_list Keys.[ A; B; Select; Start; Up; Down; Left; Right ]
+  val create : backend -> t
 
-let next_nes_key t =
-  let to_check = nes_key_order.(t.next_key) in
-  t.next_key <- (t.next_key + 1) mod 8;
-  let module B = (val t.backend : Backend) in
-  B.key_pressed to_check
+  val next_register : t -> Stdint.uint8
+  (** Value of the next input register for the NES *)
 
-let next_register t = if next_nes_key t then 1u else 0u
+  val get_inputs : t -> callbacks -> unit
+  (** Call back the functions if the related input is triggered *)
+end
 
-let get_inputs t callbacks =
-  let module B = (val t.backend : Backend) in
-  B.get_inputs callbacks
+module Make (B : Backend) : S with type backend = B.t = struct
+  type t = { mutable next_key : int; backend_state : B.t }
+  type backend = B.t
+
+  let create backend_state = { next_key = 0; backend_state }
+
+  let nes_key_order =
+    Array.of_list Keys.[ A; B; Select; Start; Up; Down; Left; Right ]
+
+  let next_nes_key t =
+    let to_check = nes_key_order.(t.next_key) in
+    t.next_key <- (t.next_key + 1) mod 8;
+    B.key_pressed t.backend_state to_check
+
+  let next_register t = if next_nes_key t then 1u else 0u
+  let get_inputs t callbacks = B.get_inputs t.backend_state callbacks
+end

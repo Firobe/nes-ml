@@ -18,9 +18,6 @@ module Keys : sig
   val compare : t -> t -> int
 end
 
-type t
-(** State of the input state machine *)
-
 type callbacks = {
   toggle_debug : unit -> unit;
   toggle_gui : unit -> unit;
@@ -29,14 +26,26 @@ type callbacks = {
 }
 
 module type Backend = sig
-  val key_pressed : Keys.t -> bool
-  val get_inputs : callbacks -> unit
+  type t
+
+  val key_pressed : t -> Keys.t -> bool
+  val get_inputs : t -> callbacks -> unit
+  val next_frame : t -> unit
 end
 
-val create : (module Backend) -> t
+module type S = sig
+  type t
+  (** State of the input state machine *)
 
-val next_register : t -> Stdint.uint8
-(** Value of the next input register for the NES *)
+  type backend
 
-val get_inputs : t -> callbacks -> unit
-(** Call back the functions if the related input is triggered *)
+  val create : backend -> t
+
+  val next_register : t -> Stdint.uint8
+  (** Value of the next input register for the NES *)
+
+  val get_inputs : t -> callbacks -> unit
+  (** Call back the functions if the related input is triggered *)
+end
+
+module Make : functor (B : Backend) -> S with type backend = B.t

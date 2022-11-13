@@ -9,30 +9,24 @@ let rec n_times f n =
     f ();
     n_times f (n - 1))
 
-type devices = { rom : Rom.t; apu : Apu.t; ppu : Ppu.t; input : Input.t }
+type 'a devices = { rom : Rom.t; apu : Apu.t; ppu : Ppu.t; input : 'a }
 
-module Build_NES (M : Mapper.S) : C6502.MemoryMap with type input = devices =
-struct
+module Build_NES (M : Mapper.S) (I : Input.S) :
+  C6502.MemoryMap with type input = I.t devices = struct
   open Infix_int.Common
 
-  type input = devices
+  type input = I.t devices
 
   type t = {
     main : U8.t array;
     mapper : M.t;
     apu : Apu.t;
     ppu : Ppu.t;
-    input : Input.t
+    input : I.t;
   }
 
   let create { rom; apu; ppu; input } =
-    {
-      main = Array.make 0x8000 0u;
-      mapper = M.create rom;
-      input = input;
-      apu;
-      ppu;
-    }
+    { main = Array.make 0x8000 0u; mapper = M.create rom; input; apu; ppu }
 
   (* Utils *)
   let is_in_ppu_range addr = addr >= 0x2000U && addr <= 0x2007U
@@ -57,7 +51,7 @@ struct
     let a = address_mirroring a in
     if is_in_ppu_range a then Ppu.get_register t.ppu (to_int (logand a 7U))
     else if a = 0x4015U then Apu.read_register t.apu a
-    else if a = 0x4016U then Input.next_register t.input
+    else if a = 0x4016U then I.next_register t.input
     else if is_in_cartridge_range a then M.read t.mapper a
     else t.main.(?%a)
 
@@ -71,14 +65,15 @@ struct
     else t.main.(?%a) <- v
 end
 
-module Main (NES : C6502.CPU with type input := devices) = struct
+module Main (I : Input.S) (NES : C6502.CPU with type input := I.t devices) =
+struct
   type state = {
     cpu : NES.t;
     apu : Apu.t;
     ppu : Ppu.t;
     rom : Rom.t;
     collector : C6502.IRQ_collector.t;
-    input : Input.t
+    input : I.t;
   }
 
   type io = { mutable debug : Ppu.Debug.t option; main_window : Gui.t }
@@ -113,7 +108,7 @@ module Main (NES : C6502.CPU with type input := devices) = struct
             msg
   end
 
-  let create ({ apu; rom; ppu; input } : devices) collector nmi =
+  let create ({ apu; rom; ppu; input } : I.t devices) collector nmi =
     let cpu = NES.create ~collector ~nmi { apu; rom; ppu; input } in
     load_rom_memory ppu rom;
     NES.Register.set (NES.registers cpu) `S 0xFDu;
@@ -155,7 +150,7 @@ module Main (NES : C6502.CPU with type input := devices) = struct
           Gui.render t.io.main_window;
           aux (frame + 1) (* Normal emulation *))
         else (
-          if frame mod 100 = 0 then Input.get_inputs t.state.input callbacks;
+          if frame mod 100 = 0 then I.get_inputs t.state.input callbacks;
           let old = NES.cycle_count t.state.cpu in
           NES.next_cycle t.state.cpu;
           let elapsed = NES.cycle_count t.state.cpu - old in
@@ -192,13 +187,14 @@ let run filename =
     if rom.config.mirroring then Ppu.Vertical else Ppu.Horizontal
   in
   let ppu = Ppu.create mirroring nmi in
-  let input = Input.create (module Input_sdl) in
+  let module Input = Input.Make (Input_sdl) in
+  let input = Input.create () in
   let mapper = Mapper.find rom in
   (* Create the CPU from the Mapper and ROM *)
   let module Mapper = (val mapper : Mapper.S) in
-  let module Memory_Map = Build_NES (Mapper) in
+  let module Memory_Map = Build_NES (Mapper) (Input) in
   let module NES = C6502.Make (Memory_Map) in
-  let module System = Main (NES) in
+  let module System = Main (Input) (NES) in
   let state = System.create { rom; apu; ppu; input } collector nmi in
   (try System.run state
    with C6502.Invalid_instruction (addr, opcode) ->

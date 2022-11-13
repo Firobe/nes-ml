@@ -1,5 +1,7 @@
 open Tsdl
 
+type t = unit
+
 module Keymap = Map.Make (Input.Keys)
 
 type binding = { key : Sdl.keycode; kmod : Sdl.keymod }
@@ -42,12 +44,12 @@ let reverse_binding b =
 
 let state = Sdl.get_keyboard_state ()
 
-let key_pressed key =
+let key_pressed () key =
   let { key; _ } = Keymap.find key bindings in
   let scancode = Sdl.get_scancode_from_key key in
   state.{scancode} != 0
 
-let get_inputs (c : Input.callbacks) =
+let get_inputs () (c : Input.callbacks) =
   let open Sdl in
   let event = Event.create () in
   let rec aux () =
@@ -69,3 +71,4 @@ let get_inputs (c : Input.callbacks) =
   in
   aux ()
 
+let next_frame () = ()
