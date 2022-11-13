@@ -9,7 +9,7 @@ let rec n_times f n =
     f ();
     n_times f (n - 1))
 
-type devices = { rom : Rom.t; apu : Apu.t; ppu : Ppu.t }
+type devices = { rom : Rom.t; apu : Apu.t; ppu : Ppu.t; input : Input.t }
 
 module Build_NES (M : Mapper.S) : C6502.MemoryMap with type input = devices =
 struct
@@ -22,14 +22,14 @@ struct
     mapper : M.t;
     apu : Apu.t;
     ppu : Ppu.t;
-    input : Input.t;
+    input : Input.t
   }
 
-  let create { rom; apu; ppu } =
+  let create { rom; apu; ppu; input } =
     {
       main = Array.make 0x8000 0u;
       mapper = M.create rom;
-      input = Input.create ();
+      input = input;
       apu;
       ppu;
     }
@@ -78,6 +78,7 @@ module Main (NES : C6502.CPU with type input := devices) = struct
     ppu : Ppu.t;
     rom : Rom.t;
     collector : C6502.IRQ_collector.t;
+    input : Input.t
   }
 
   type io = { mutable debug : Ppu.Debug.t option; main_window : Gui.t }
@@ -112,14 +113,14 @@ module Main (NES : C6502.CPU with type input := devices) = struct
             msg
   end
 
-  let create ({ apu; rom; ppu } : devices) collector nmi =
-    let cpu = NES.create ~collector ~nmi { apu; rom; ppu } in
+  let create ({ apu; rom; ppu; input } : devices) collector nmi =
+    let cpu = NES.create ~collector ~nmi { apu; rom; ppu; input } in
     load_rom_memory ppu rom;
     NES.Register.set (NES.registers cpu) `S 0xFDu;
     NES.Register.set (NES.registers cpu) `P 0x34u;
     NES.PC.init (NES.pc cpu) (NES.memory cpu);
     NES.enable_decimal cpu false;
-    let state = { cpu; apu; ppu; rom; collector } in
+    let state = { cpu; apu; ppu; rom; collector; input } in
     let io = { debug = None; main_window = Gui.create () } in
     { state; io }
 
@@ -154,7 +155,7 @@ module Main (NES : C6502.CPU with type input := devices) = struct
           Gui.render t.io.main_window;
           aux (frame + 1) (* Normal emulation *))
         else (
-          if frame mod 100 = 0 then Input.get_inputs callbacks;
+          if frame mod 100 = 0 then Input.get_inputs t.state.input callbacks;
           let old = NES.cycle_count t.state.cpu in
           NES.next_cycle t.state.cpu;
           let elapsed = NES.cycle_count t.state.cpu - old in
@@ -191,13 +192,14 @@ let run filename =
     if rom.config.mirroring then Ppu.Vertical else Ppu.Horizontal
   in
   let ppu = Ppu.create mirroring nmi in
+  let input = Input.create (module Input_sdl) in
   let mapper = Mapper.find rom in
   (* Create the CPU from the Mapper and ROM *)
   let module Mapper = (val mapper : Mapper.S) in
   let module Memory_Map = Build_NES (Mapper) in
   let module NES = C6502.Make (Memory_Map) in
   let module System = Main (NES) in
-  let state = System.create { rom; apu; ppu } collector nmi in
+  let state = System.create { rom; apu; ppu; input } collector nmi in
   (try System.run state
    with C6502.Invalid_instruction (addr, opcode) ->
      Format.printf
