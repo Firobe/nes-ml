@@ -111,24 +111,27 @@ module Make_record (O : Out) = struct
       {|version 3
 emuVersion 20604
 palFlag 0
-romFilename mario
-romChecksum base64:ujnd5jqyCbG8dR4FNecrGA==
-guid 79C0CEC5-3EB1-9373-34DA-53BEE986562A
+romFilename ???
+romChecksum ???
+guid ???
 fourscore 0
 microphone 0
 port0 1
-port1 1
+port1 0
 port2 0
 FDS 0
 NewPPU 0
 |};
     { this_frame = KSet.empty; channel }
 
-  let key_pressed _ = M.key_pressed ()
+  let add_key_to_frame t k = t.this_frame <- KSet.add k t.this_frame
 
-  let get_inputs t c =
-    let add_key_to_frame k = t.this_frame <- KSet.add k t.this_frame in
-    M.gen_get_inputs add_key_to_frame c
+  let key_pressed t k =
+    let pressed = M.key_pressed () k in
+    if pressed then add_key_to_frame t k;
+    pressed
+
+  let get_inputs t c = M.gen_get_inputs (add_key_to_frame t) c
 
   let next_frame t =
     fm2_write_line t.channel t.this_frame (M.key_pressed ());
