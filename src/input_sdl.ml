@@ -85,56 +85,25 @@ end
 
 module KSet = Set.Make (Input.Keys)
 
-let fm2_write_line channel ks kp =
-  let p = Printf.fprintf channel in
-  let pk k c =
-    if KSet.mem k ks || kp k then Printf.fprintf channel "%c" c
-    else Printf.fprintf channel "."
-  in
-  p "|0|";
-  pk Right 'R';
-  pk Left 'L';
-  pk Down 'D';
-  pk Up 'U';
-  pk Start 'T';
-  pk Select 'S';
-  pk B 'B';
-  pk A 'A';
-  p "|||\n"
-
 module Make_record (O : Out) = struct
   type t = { mutable this_frame : KSet.t; channel : out_channel }
 
   let create () =
     let channel = open_out O.file in
-    Printf.fprintf channel
-      {|version 3
-emuVersion 20604
-palFlag 0
-romFilename ???
-romChecksum ???
-guid ???
-fourscore 0
-microphone 0
-port0 1
-port1 0
-port2 0
-FDS 0
-NewPPU 0
-|};
     { this_frame = KSet.empty; channel }
 
   let add_key_to_frame t k = t.this_frame <- KSet.add k t.this_frame
 
   let key_pressed t k =
     let pressed = M.key_pressed () k in
+    Movie_format.FM2.Write.write_header t.channel;
     if pressed then add_key_to_frame t k;
     pressed
 
   let get_inputs t c = M.gen_get_inputs (add_key_to_frame t) c
 
   let next_frame t =
-    fm2_write_line t.channel t.this_frame (M.key_pressed ());
+    Movie_format.FM2.Write.write_line t.channel t.this_frame;
     t.this_frame <- KSet.empty
 end
 
