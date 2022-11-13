@@ -179,16 +179,24 @@ struct
     Gui.exit io.main_window
 end
 
-let input_backend = function
-  | Some path ->
+let input_backend movie record =
+  match (movie, record) with
+  | Some _, Some _ -> failwith "Cannot record while replaying movie"
+  | Some path, None ->
       let module Movie = struct
         let file = path
       end in
       let module Movie_applied = Input_movie.Make (Movie) in
       (module Movie_applied : Input.Backend)
-  | None -> (module Input_sdl)
+  | None, Some path ->
+      let module Out = struct
+        let file = path
+      end in
+      let module Record_applied = Input_sdl.Make_record (Out) in
+      (module Record_applied)
+  | None, None -> (module Input_sdl)
 
-let run filename movie =
+let run filename movie record =
   let collector = C6502.IRQ_collector.create () in
   let nmi = C6502.NMI.create () in
   let rom = Rom.load filename in
@@ -197,7 +205,7 @@ let run filename movie =
     if rom.config.mirroring then Ppu.Vertical else Ppu.Horizontal
   in
   let ppu = Ppu.create mirroring nmi in
-  let input_backend = input_backend movie in
+  let input_backend = input_backend movie record in
   let module Input_backend = (val input_backend : Input.Backend) in
   let module Input = Input.Make (Input_backend) in
   let input = Input.create () in
@@ -227,7 +235,12 @@ module Command_line = struct
     let i = Arg.info [ "m"; "movie" ] ~docv:"MOVIE_PATH" ~doc in
     Arg.(value & opt (some file) None & i)
 
-  let run_term = Term.(const run $ rom_arg $ movie_arg)
+  let record_arg =
+    let doc = "Record input log to given file in (approximate) .fm2 format" in
+    let i = Arg.info [ "r"; "record" ] ~docv:"OUTPUT_PATH" ~doc in
+    Arg.(value & opt (some string) None & i)
+
+  let run_term = Term.(const run $ rom_arg $ movie_arg $ record_arg)
 
   let cmd =
     let doc = "experimental NES emulator written in OCaml" in
