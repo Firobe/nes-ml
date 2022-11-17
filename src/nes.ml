@@ -186,13 +186,13 @@ let input_backend movie record =
       let module Movie = struct
         let file = path
       end in
-      let module Movie_applied = Input_movie.Make (Movie) in
+      let module Movie_applied = Input_movie.Make_deter (Movie) in
       (module Movie_applied : Input.Backend)
   | None, Some path ->
       let module Out = struct
         let file = path
       end in
-      let module Record_applied = Input_sdl.Make_record (Out) in
+      let module Record_applied = Input_sdl.Make_record_deter (Out) in
       (module Record_applied)
   | None, None -> (module Input_sdl)
 
@@ -231,12 +231,12 @@ module Command_line = struct
     Arg.(required & pos 0 (some file) None & info [] ~docv:"ROM_PATH" ~doc)
 
   let movie_arg =
-    let doc = "Optional input file in .fm2 format to be replayed" in
+    let doc = "Optional input file as outputed by --record to be replayed" in
     let i = Arg.info [ "m"; "movie" ] ~docv:"MOVIE_PATH" ~doc in
     Arg.(value & opt (some file) None & i)
 
   let record_arg =
-    let doc = "Record input log to given file in (approximate) .fm2 format" in
+    let doc = "Record input log to given file in a custom format" in
     let i = Arg.info [ "r"; "record" ] ~docv:"OUTPUT_PATH" ~doc in
     Arg.(value & opt (some string) None & i)
 

@@ -85,7 +85,7 @@ end
 
 module KSet = Set.Make (Input.Keys)
 
-module Make_record (O : Out) = struct
+module Make_record_FM2 (O : Out) = struct
   type t = { mutable this_frame : KSet.t; channel : out_channel }
 
   let create () =
@@ -105,6 +105,23 @@ module Make_record (O : Out) = struct
   let next_frame t =
     Movie_format.FM2.Write.write_line t.channel t.this_frame;
     t.this_frame <- KSet.empty
+end
+
+module Make_record_deter (O : Out) = struct
+  type t = { mutable counter : int; channel : out_channel }
+
+  let create () =
+    let channel = open_out O.file in
+    { counter = 0; channel }
+
+  let key_pressed t k =
+    let pressed = M.key_pressed () k in
+    if pressed then Printf.fprintf t.channel "%d\n" t.counter;
+    t.counter <- t.counter + 1;
+    pressed
+
+  let get_inputs _ = M.get_inputs ()
+  let next_frame _ = ()
 end
 
 include M

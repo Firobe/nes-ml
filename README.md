@@ -55,10 +55,10 @@ Note that the `N` for save states must be 1, 2 or 3.
 - Multiple **save states**
 - Implemented mappers: 0, 2
 - Barebones GUI (with debugging windows showing the internal PPU state)
+- Movie recording and replaying (in custom format with subframe precision)
 
 ## Next steps
 
-- Implement movie reading with the [fm2 file format](https://fceux.com/web/FM2.html)
 - Implement headless backend for automatic tests
 - Implement mappers 1, 4
 
