@@ -26,13 +26,16 @@ jobs:
       - uses: actions/checkout@v3
 
       - name: Install packages
-        run: sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libsdl2-dev libsdl2-image-dev libsdl2-ttf-dev
+          sudo apt-get install -y rsync bubblewrap darcs g++-multilib gcc-multilib mercurial musl-tools
 
       # Runs a single command using the runners shell
       - name: Setup OCaml switch
-        uses: avsm/setup-ocaml@v1
+        uses: ocaml/setup-ocaml@v2
         with:
-          ocaml-version: 4.14.0
+          ocaml-compiler: 4.14.0
 
       # Runs a set of commands using the runners shell
       - name: Pin and build package
