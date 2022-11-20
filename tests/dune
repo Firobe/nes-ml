@@ -1,0 +1,8 @@
+(test
+ (name video_diffs)
+ (deps
+  (source_tree roms/)
+  (source_tree inputs/)
+  (source_tree videos/)
+  %{bin:nes-ml})
+ (libraries bos fpath))

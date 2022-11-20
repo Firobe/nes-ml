@@ -73,8 +73,8 @@ let save_mp4 dir out =
   let in_pat = Fpath.(dir / "%d.bmp" |> to_string) in
   let cmd =
     Bos.Cmd.(
-      v "ffmpeg" % "-loglevel" % "error" % "-f" % "image2" % "-framerate" % "60" % "-i" % in_pat
-      % "-c:v" % "libx264" % "-crf" % "0" % "-y" % "-vf"
+      v "ffmpeg" % "-loglevel" % "error" % "-f" % "image2" % "-framerate" % "60"
+      % "-i" % in_pat % "-c:v" % "libx264" % "-crf" % "0" % "-y" % "-vf"
       % "scale=1024:-1:flags=neighbor" % out)
   in
   match Bos.OS.Cmd.run cmd with
