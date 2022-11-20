@@ -40,3 +40,6 @@ jobs:
       # Runs a set of commands using the runners shell
       - name: Pin and build package
         run: opam install -y .
+
+      - name: Test ROMs
+        run: opam exec -- dune test
