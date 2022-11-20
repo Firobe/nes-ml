@@ -11,18 +11,23 @@ let rec n_times f n =
     f ();
     n_times f (n - 1))
 
-type 'a devices = { rom : Rom.t; apu : Apu.t; ppu : Ppu.t; input : 'a }
+type ('apu, 'input) devices = {
+  rom : Rom.t;
+  apu : 'apu;
+  ppu : Ppu.t;
+  input : 'input;
+}
 
-module Build_NES (M : Mapper.S) (I : Input.S) :
-  C6502.MemoryMap with type input = I.t devices = struct
+module Build_NES (A : Apu.S) (M : Mapper.S) (I : Input.S) :
+  C6502.MemoryMap with type input = (A.t, I.t) devices = struct
   open Infix_int.Common
 
-  type input = I.t devices
+  type input = (A.t, I.t) devices
 
   type t = {
     main : U8.t array;
     mapper : M.t;
-    apu : Apu.t;
+    apu : A.t;
     ppu : Ppu.t;
     input : I.t;
   }
@@ -52,7 +57,7 @@ module Build_NES (M : Mapper.S) (I : Input.S) :
     let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then Ppu.get_register t.ppu (to_int (logand a 7U))
-    else if a = 0x4015U then Apu.read_register t.apu a
+    else if a = 0x4015U then A.read_register t.apu a
     else if a = 0x4016U then I.next_register t.input
     else if is_in_cartridge_range a then M.read t.mapper a
     else t.main.(?%a)
@@ -61,17 +66,20 @@ module Build_NES (M : Mapper.S) (I : Input.S) :
     let open U16 in
     let a = address_mirroring a in
     if is_in_ppu_range a then Ppu.set_register t.ppu (to_int (logand a 7U)) v
-    else if is_in_apu_range a then Apu.write_register t.apu v a
+    else if is_in_apu_range a then A.write_register t.apu v a
     else if a = 0x4014U then Ppu.dma t.ppu (read t) (?$v $<< 8)
     else if is_in_cartridge_range a then M.write t.mapper a v
     else t.main.(?%a) <- v
 end
 
-module Main (I : Input.S) (NES : C6502.CPU with type input := I.t devices) =
+module Main
+    (A : Apu.S)
+    (I : Input.S)
+    (NES : C6502.CPU with type input := (A.t, I.t) devices) =
 struct
   type state = {
     cpu : NES.t;
-    apu : Apu.t;
+    apu : A.t;
     ppu : Ppu.t;
     rom : Rom.t;
     collector : C6502.IRQ_collector.t;
@@ -111,7 +119,8 @@ struct
             msg
   end
 
-  let create ({ apu; rom; ppu; input } : I.t devices) collector nmi cli_flags =
+  let create ({ apu; rom; ppu; input } : (A.t, I.t) devices) collector nmi
+      cli_flags =
     let cpu = NES.create ~collector ~nmi { apu; rom; ppu; input } in
     load_rom_memory ppu rom;
     NES.Register.set (NES.registers cpu) `S 0xFDu;
@@ -157,7 +166,7 @@ struct
           let old = NES.cycle_count t.state.cpu in
           NES.next_cycle t.state.cpu;
           let elapsed = NES.cycle_count t.state.cpu - old in
-          n_times (fun () -> Apu.next_cycle t.state.apu) elapsed;
+          n_times (fun () -> A.next_cycle t.state.apu) elapsed;
           n_times
             (fun () -> Ppu.next_cycle t.state.ppu t.io.main_window)
             (elapsed * 3);
@@ -165,7 +174,7 @@ struct
           | `No -> ()
           | `Yes bg_color ->
               let disp = t.io.main_window.display in
-              Apu.output_frame t.state.apu;
+              A.output_frame t.state.apu;
               I.next_frame t.state.input;
               Display.render disp;
               if !enable_gui_at_next_frame then (
@@ -179,7 +188,7 @@ struct
     with Common.End_of_movie -> Printf.printf "End of movie\n" (* end loop *)
 
   let close_io { io; state; _ } =
-    Apu.exit state.apu;
+    A.exit state.apu;
     Gui.exit io.main_window
 end
 
@@ -200,11 +209,22 @@ let input_backend movie record =
       (module Record_applied)
   | None, None -> (module Input_sdl)
 
-let run filename movie record uncap_speed save_mp4 =
+let make_apu headless =
+  let backend =
+    if headless then (module Apu.Dummy_backend : Apu.Backend)
+    else (module Apu.Normal_backend)
+  in
+  let module Backend = (val backend) in
+  let module Applied = Apu.Make (Backend) in
+  (module Applied : Apu.S)
+
+let run filename movie record uncap_speed save_mp4 headless =
   let cli_flags = { uncap_speed; save_mp4 } in
   let collector = C6502.IRQ_collector.create () in
   let nmi = C6502.NMI.create () in
   let rom = Rom.load filename in
+  let apu_m = make_apu headless in
+  let module Apu = (val apu_m : Apu.S) in
   let apu = Apu.create collector cli_flags in
   let mirroring =
     if rom.config.mirroring then Ppu.Vertical else Ppu.Horizontal
@@ -217,9 +237,9 @@ let run filename movie record uncap_speed save_mp4 =
   let mapper = Mapper.find rom in
   (* Create the CPU from the Mapper and ROM *)
   let module Mapper = (val mapper : Mapper.S) in
-  let module Memory_Map = Build_NES (Mapper) (Input) in
+  let module Memory_Map = Build_NES (Apu) (Mapper) (Input) in
   let module NES = C6502.Make (Memory_Map) in
-  let module System = Main (Input) (NES) in
+  let module System = Main (Apu) (Input) (NES) in
   let state = System.create { rom; apu; ppu; input } collector nmi cli_flags in
   (try System.run state
    with C6502.Invalid_instruction (addr, opcode) ->
@@ -253,13 +273,20 @@ module Command_line = struct
     let i = Arg.info [ "s"; "save" ] ~docv:"OUTPUT_PATH" ~doc in
     Arg.(value & opt (some string) None & i)
 
+  let headless_arg =
+    let doc = "Run in headless mode: no audio or video output" in
+    let i = Arg.info [ "t"; "headless" ] ~doc in
+    Arg.(value & flag i)
+
   let speed_arg =
     let doc = "Uncap emulation speed" in
     let i = Arg.info [ "u"; "uncap" ] ~doc in
     Arg.(value & flag i)
 
   let run_term =
-    Term.(const run $ rom_arg $ movie_arg $ record_arg $ speed_arg $ save_arg)
+    Term.(
+      const run $ rom_arg $ movie_arg $ record_arg $ speed_arg $ save_arg
+      $ headless_arg)
 
   let cmd =
     let doc = "experimental NES emulator written in OCaml" in

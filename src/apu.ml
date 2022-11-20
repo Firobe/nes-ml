@@ -519,10 +519,20 @@ module Frame_counter = struct
       action t units collector)
 end
 
-module Resampler = struct
+module type Backend = sig
+  type t
+
+  val create : unit -> t
+  val delete : t -> unit
+  val get_queued : t -> int
+  val queue_audio : t -> ('a, 'b, Bigarray.c_layout) Bigarray.Array1.t -> unit
+  val sampling_freq : t -> int
+end
+
+module Make_Resampler (A : Backend) = struct
   type t = {
+    backend : A.t;
     sampling_freq : float;
-    device : int32;
     mutable fb :
       (float, Bigarray.float32_elt, Bigarray.c_layout) Bigarray.Array1.t;
         (* frame buffer *)
@@ -536,22 +546,22 @@ module Resampler = struct
   (* enough to store samples for two frames at 44100 Hz *)
   let fb_capacity = 2048
 
-  let create sampling_freq device cli_flags =
+  let create backend cli_flags =
     {
-      device;
+      backend;
+      sampling_freq = float_of_int (A.sampling_freq backend);
       fb = Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout fb_capacity;
       fb_length = 0;
       history = Array.make 4 0.;
       mu = 0.;
-      sampling_freq = float_of_int sampling_freq;
-      ratio = float_of_int cpu_freq /. float_of_int sampling_freq;
+      ratio = float_of_int cpu_freq /. float_of_int (A.sampling_freq backend);
       max_delta = (if cli_flags.Common.uncap_speed then 0.5 else 0.005);
     }
 
   (* Return 0. if queue empty 1. if >= max_queue_size *)
   let fill_level t =
     let max_queue_size = 8192 in
-    let current = min (Sdl.get_queued_audio_size t.device) max_queue_size in
+    let current = min (A.get_queued t.backend) max_queue_size in
     float_of_int current /. float_of_int max_queue_size
 
   let update_frequency t =
@@ -593,8 +603,19 @@ module Resampler = struct
     res
 end
 
-module APU = struct
-  type audio_backend = { device : int32; sampling_freq : int }
+module type S = sig
+  type t
+
+  val create : C6502.IRQ_collector.t -> Common.cli_flags -> t
+  val next_cycle : t -> unit
+  val output_frame : t -> unit
+  val write_register : t -> Stdint.uint8 -> Stdint.uint16 -> unit
+  val read_register : t -> Stdint.uint16 -> Stdint.uint8
+  val exit : t -> unit
+end
+
+module Make (A : Backend) : S = struct
+  module Resampler = Make_Resampler (A)
 
   type t = {
     frame_counter : Frame_counter.t;
@@ -605,18 +626,18 @@ module APU = struct
     half_clock : Divider.t;
     noise : Noise.t;
     dmc : DMC.t;
-    backend : audio_backend;
+    backend : A.t;
     collector : C6502.IRQ_collector.t;
   }
 
-  let create backend collector cli_flags =
+  let create collector cli_flags =
+    let backend = A.create () in
     {
       frame_counter = Frame_counter.create ();
       pulse1 = Pulse.create Sweep.Pulse1;
       pulse2 = Pulse.create Sweep.Pulse2;
       triangle = Triangle.create ();
-      resampler =
-        Resampler.create backend.sampling_freq backend.device cli_flags;
+      resampler = Resampler.create backend cli_flags;
       half_clock = Divider.create 1;
       noise = Noise.create ();
       dmc = DMC.create ();
@@ -705,45 +726,65 @@ module APU = struct
 
   let output_frame t =
     let buffer = Resampler.resample t.resampler in
-    match Sdl.queue_audio t.backend.device buffer with
+    A.queue_audio t.backend buffer
+
+  let exit t = A.delete t.backend
+end
+
+module Normal_backend : Backend = struct
+  type t = { device : int32; sampling_freq : int }
+
+  let create () =
+    match Sdl.init Sdl.Init.audio with
+    | Error (`Msg e) ->
+        Printf.printf "Error while initializing audio device %s" e;
+        assert false
+    | Ok () ->
+        ();
+        let audio_spec =
+          {
+            Sdl.as_freq = 44100;
+            as_format = Sdl.Audio.f32;
+            as_channels = 1;
+            as_silence = 0;
+            as_samples = 1024;
+            as_size = Int32.zero;
+            as_callback = None;
+          }
+        in
+        let dev, have =
+          match
+            Sdl.open_audio_device None false audio_spec
+              Sdl.Audio.allow_frequency_change
+          with
+          | Error (`Msg e) ->
+              Printf.printf "Error while opening audio device: %s\n" e;
+              assert false
+          | Ok h -> h
+        in
+        Sdl.pause_audio_device dev false;
+        { sampling_freq = have.as_freq; device = dev }
+
+  let delete t = Sdl.close_audio_device t.device
+  let get_queued t = Sdl.get_queued_audio_size t.device
+  let sampling_freq t = t.sampling_freq
+
+  let queue_audio t data =
+    match Sdl.queue_audio t.device data with
     | Ok () -> ()
     | Error (`Msg e) ->
         Printf.printf "Error when pushing samples: %s\n" e;
         assert false
-
-  let exit t = Sdl.close_audio_device t.backend.device
 end
 
-include APU
+module Dummy_backend : Backend = struct
+  type t = unit
 
-let create collector =
-  match Sdl.init Sdl.Init.audio with
-  | Error (`Msg e) ->
-      Printf.printf "Error while initializing audio device %s" e;
-      assert false
-  | Ok () ->
-      ();
-      let audio_spec =
-        {
-          Sdl.as_freq = 44100;
-          as_format = Sdl.Audio.f32;
-          as_channels = 1;
-          as_silence = 0;
-          as_samples = 1024;
-          as_size = Int32.zero;
-          as_callback = None;
-        }
-      in
-      let dev, have =
-        match
-          Sdl.open_audio_device None false audio_spec
-            Sdl.Audio.allow_frequency_change
-        with
-        | Error (`Msg e) ->
-            Printf.printf "Error while opening audio device: %s\n" e;
-            assert false
-        | Ok h -> h
-      in
-      Sdl.pause_audio_device dev false;
-      let backend = APU.{ sampling_freq = have.as_freq; device = dev } in
-      APU.create backend collector
+  let create () = ()
+  let delete () = ()
+  let get_queued () = 4000
+  let sampling_freq () = 44100
+  let queue_audio () _ = ()
+end
+
+include Make (Normal_backend)

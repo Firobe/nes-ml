@@ -13,7 +13,7 @@ let record_video name =
   let input_file = Fpath.(inputs_dir / name |> add_ext "rec") in
   let output_file = Fpath.(v name |> add_ext "mp4") in
   let rom_file = Fpath.(roms_dir / name |> add_ext "nes") in
-  let args = Cmd.(v "-m" % p input_file % "-u" % "-s" % p output_file) in
+  let args = Cmd.(v "-m" % p input_file % "-u" % "-t" % "-s" % p output_file) in
   launch_emulator args rom_file;
   output_file
 
