@@ -530,12 +530,13 @@ module Resampler = struct
     mutable history : float array; (* 4 last values *)
     mutable mu : float;
     mutable ratio : float;
+    max_delta : float;
   }
 
   (* enough to store samples for two frames at 44100 Hz *)
   let fb_capacity = 2048
 
-  let create sampling_freq device =
+  let create sampling_freq device cli_flags =
     {
       device;
       fb = Bigarray.Array1.create Bigarray.Float32 Bigarray.c_layout fb_capacity;
@@ -544,6 +545,7 @@ module Resampler = struct
       mu = 0.;
       sampling_freq = float_of_int sampling_freq;
       ratio = float_of_int cpu_freq /. float_of_int sampling_freq;
+      max_delta = (if cli_flags.Common.uncap_speed then 0.5 else 0.005);
     }
 
   (* Return 0. if queue empty 1. if >= max_queue_size *)
@@ -553,11 +555,10 @@ module Resampler = struct
     float_of_int current /. float_of_int max_queue_size
 
   let update_frequency t =
-    let max_delta = 0.005 in
     let fill_level = fill_level t in
     let cpu_freq = float_of_int cpu_freq in
     let base_ratio = cpu_freq /. t.sampling_freq in
-    let coef = 1. -. max_delta +. (2. *. fill_level *. max_delta) in
+    let coef = 1. -. t.max_delta +. (2. *. fill_level *. t.max_delta) in
     let target_ratio = base_ratio *. coef in
     t.ratio <- target_ratio
 
@@ -608,13 +609,14 @@ module APU = struct
     collector : C6502.IRQ_collector.t;
   }
 
-  let create backend collector =
+  let create backend collector cli_flags =
     {
       frame_counter = Frame_counter.create ();
       pulse1 = Pulse.create Sweep.Pulse1;
       pulse2 = Pulse.create Sweep.Pulse2;
       triangle = Triangle.create ();
-      resampler = Resampler.create backend.sampling_freq backend.device;
+      resampler =
+        Resampler.create backend.sampling_freq backend.device cli_flags;
       half_clock = Divider.create 1;
       noise = Noise.create ();
       dmc = DMC.create ();

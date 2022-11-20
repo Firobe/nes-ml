@@ -1,3 +1,5 @@
+open Common
+
 let load_rom_memory ppu rom =
   let open Rom in
   Ppu.init_memory ppu
@@ -74,6 +76,7 @@ struct
     rom : Rom.t;
     collector : C6502.IRQ_collector.t;
     input : I.t;
+    cli_flags : cli_flags;
   }
 
   type io = { mutable debug : Ppu.Debug.t option; main_window : Gui.t }
@@ -108,15 +111,15 @@ struct
             msg
   end
 
-  let create ({ apu; rom; ppu; input } : I.t devices) collector nmi =
+  let create ({ apu; rom; ppu; input } : I.t devices) collector nmi cli_flags =
     let cpu = NES.create ~collector ~nmi { apu; rom; ppu; input } in
     load_rom_memory ppu rom;
     NES.Register.set (NES.registers cpu) `S 0xFDu;
     NES.Register.set (NES.registers cpu) `P 0x34u;
     NES.PC.init (NES.pc cpu) (NES.memory cpu);
     NES.enable_decimal cpu false;
-    let state = { cpu; apu; ppu; rom; collector; input } in
-    let io = { debug = None; main_window = Gui.create () } in
+    let state = { cpu; apu; ppu; rom; collector; input; cli_flags } in
+    let io = { debug = None; main_window = Gui.create cli_flags } in
     { state; io }
 
   let debug_callback t () =
@@ -196,11 +199,12 @@ let input_backend movie record =
       (module Record_applied)
   | None, None -> (module Input_sdl)
 
-let run filename movie record =
+let run filename movie record uncap_speed =
+  let cli_flags = { uncap_speed } in
   let collector = C6502.IRQ_collector.create () in
   let nmi = C6502.NMI.create () in
   let rom = Rom.load filename in
-  let apu = Apu.create collector in
+  let apu = Apu.create collector cli_flags in
   let mirroring =
     if rom.config.mirroring then Ppu.Vertical else Ppu.Horizontal
   in
@@ -215,7 +219,7 @@ let run filename movie record =
   let module Memory_Map = Build_NES (Mapper) (Input) in
   let module NES = C6502.Make (Memory_Map) in
   let module System = Main (Input) (NES) in
-  let state = System.create { rom; apu; ppu; input } collector nmi in
+  let state = System.create { rom; apu; ppu; input } collector nmi cli_flags in
   (try System.run state
    with C6502.Invalid_instruction (addr, opcode) ->
      Format.printf
@@ -240,7 +244,12 @@ module Command_line = struct
     let i = Arg.info [ "r"; "record" ] ~docv:"OUTPUT_PATH" ~doc in
     Arg.(value & opt (some string) None & i)
 
-  let run_term = Term.(const run $ rom_arg $ movie_arg $ record_arg)
+  let speed_arg =
+    let doc = "Uncap emulation speed" in
+    let i = Arg.info [ "u"; "uncap" ] ~doc in
+    Arg.(value & flag i)
+
+  let run_term = Term.(const run $ rom_arg $ movie_arg $ record_arg $ speed_arg)
 
   let cmd =
     let doc = "experimental NES emulator written in OCaml" in

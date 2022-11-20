@@ -9,7 +9,13 @@ val exit : unit -> unit
 (** Release the backend *)
 
 val create :
-  width:int -> height:int -> scale:int -> palette:int list -> string -> t
+  width:int ->
+  height:int ->
+  scale:int ->
+  palette:int list ->
+  ?vsync:bool ->
+  string ->
+  t
 (** Create the emulation window with given attributes *)
 
 val delete : t -> unit

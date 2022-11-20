@@ -11,6 +11,7 @@ type t = {
   scale : int;
   palette : int32 array;
   screen : (int32, int32_elt, c_layout) Array1.t;
+  vsync : bool;
 }
 
 let get_window t = t.window
@@ -20,7 +21,7 @@ let sdl_get = function
   | Error _ -> failwith "Unknown SDL error encountered"
   | Ok obj -> obj
 
-let create ~width ~height ~scale ~palette title =
+let create ~width ~height ~scale ~palette ?(vsync = true) title =
   let screen = Array1.create Int32 c_layout (width * height) in
   let s_width = scale * width in
   let s_height = scale * height in
@@ -38,7 +39,7 @@ let create ~width ~height ~scale ~palette title =
          Sdl.Texture.access_streaming ~w:width ~h:height
   in
   let palette = Array.of_list (List.map Int32.of_int palette) in
-  { renderer; window; texture; width; height; scale; screen; palette }
+  { renderer; window; texture; width; height; scale; screen; palette; vsync }
 
 let delete t =
   Sdl.destroy_texture t.texture;
@@ -78,7 +79,7 @@ let render ?(after = fun () -> ()) t =
   Sdl.unlock_texture t.texture;
   sdl_get @@ Sdl.render_copy t.renderer t.texture;
   after ();
-  FPS.wait_next_frame ();
+  if t.vsync then FPS.wait_next_frame ();
   Sdl.render_present t.renderer
 
 let init () = sdl_get @@ Sdl.init Sdl.Init.video

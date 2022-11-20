@@ -90,8 +90,8 @@ let create_board window callbacks =
   start ();
   (board, start, fps)
 
-let create () =
-  let display = Ppu_display.create () in
+let create cli_flags =
+  let display = Ppu_display.create cli_flags in
   let state = { anim = false; gui_shown = false; continue = true } in
   let window = Display.get_window display in
   let callbacks =

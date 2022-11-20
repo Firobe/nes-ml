@@ -6,7 +6,7 @@ will be fine only if the chip is cycled through at the appropriate frequency.
 
 type t
 
-val create : C6502.IRQ_collector.t -> t
+val create : C6502.IRQ_collector.t -> Common.cli_flags -> t
 (** Create the emulated chip, given a collector to communicate IRQs with the
  * CPU. Also initialize the sound backend. *)
 

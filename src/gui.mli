@@ -23,7 +23,7 @@ type t = {
   callbacks : callbacks;
 }
 
-val create : unit -> t
+val create : Common.cli_flags -> t
 (** Create the emulator GUI attached to a window, and callbacks to call *)
 
 val render : t -> unit
