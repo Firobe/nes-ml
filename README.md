@@ -28,6 +28,8 @@ Note: I recommend using a build with `flambda` activated for more performance.
 
 Use : `nes-ml PATH_TO_ROM`  
 
+See `nes-ml --help` for a list of useful options
+
 ### Controls (hard-coded)
 
 | Function | Keyboard key |
@@ -55,7 +57,8 @@ Note that the `N` for save states must be 1, 2 or 3.
 - Multiple **save states**
 - Implemented mappers: 0, 2
 - Barebones GUI (with debugging windows showing the internal PPU state)
-- Movie recording and replaying (in custom format with subframe precision)
+- Movie (input log) recording and replaying (in custom format with subframe precision)
+- Ability to record video (lossless `mp4`) of runs with ffmpeg
 
 ## Next steps
 

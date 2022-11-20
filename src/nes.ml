@@ -175,7 +175,8 @@ struct
           Ppu.Debug.render t.state.ppu t.io.debug;
           aux (frame + 1))
     in
-    aux 0
+    try aux 0
+    with Common.End_of_movie -> Printf.printf "End of movie\n" (* end loop *)
 
   let close_io { io; state; _ } =
     Apu.exit state.apu;
@@ -199,8 +200,8 @@ let input_backend movie record =
       (module Record_applied)
   | None, None -> (module Input_sdl)
 
-let run filename movie record uncap_speed =
-  let cli_flags = { uncap_speed } in
+let run filename movie record uncap_speed save_mp4 =
+  let cli_flags = { uncap_speed; save_mp4 } in
   let collector = C6502.IRQ_collector.create () in
   let nmi = C6502.NMI.create () in
   let rom = Rom.load filename in
@@ -244,12 +245,21 @@ module Command_line = struct
     let i = Arg.info [ "r"; "record" ] ~docv:"OUTPUT_PATH" ~doc in
     Arg.(value & opt (some string) None & i)
 
+  let save_arg =
+    let doc =
+      "Save a (lossless) mp4 movie of the run to the given path (need ffmpeg \
+       installed)"
+    in
+    let i = Arg.info [ "s"; "save" ] ~docv:"OUTPUT_PATH" ~doc in
+    Arg.(value & opt (some string) None & i)
+
   let speed_arg =
     let doc = "Uncap emulation speed" in
     let i = Arg.info [ "u"; "uncap" ] ~doc in
     Arg.(value & flag i)
 
-  let run_term = Term.(const run $ rom_arg $ movie_arg $ record_arg $ speed_arg)
+  let run_term =
+    Term.(const run $ rom_arg $ movie_arg $ record_arg $ speed_arg $ save_arg)
 
   let cmd =
     let doc = "experimental NES emulator written in OCaml" in

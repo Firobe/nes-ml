@@ -47,7 +47,7 @@ module Make_deter (M : Movie) : Input.Backend = struct
     { counter = 0; inputs; last = ISet.max_elt inputs }
 
   let key_pressed t _ =
-    if t.counter > t.last then failwith "End of movie";
+    if t.counter > t.last then raise Common.End_of_movie;
     let r = ISet.mem t.counter t.inputs in
     t.counter <- t.counter + 1;
     r

@@ -20,6 +20,7 @@
     stdint
     stdint-literals
     fpath
+    bos
     digestif
     cmdliner
     bogue

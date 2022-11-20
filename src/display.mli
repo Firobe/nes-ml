@@ -14,6 +14,7 @@ val create :
   scale:int ->
   palette:int list ->
   ?vsync:bool ->
+  ?save:string ->
   string ->
   t
 (** Create the emulation window with given attributes *)

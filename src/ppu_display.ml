@@ -68,4 +68,5 @@ let palette =
 
 let create cli_flags =
   let vsync = not cli_flags.Common.uncap_speed in
-  Display.create ~width:256 ~height:240 ~scale:4 ~palette ~vsync "NES"
+  let save = cli_flags.save_mp4 in
+  Display.create ~width:256 ~height:240 ~scale:4 ~palette ~vsync ?save "NES"
