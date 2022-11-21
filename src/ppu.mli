@@ -29,7 +29,7 @@ val dma : t -> (uint16 -> uint8) -> uint16 -> unit
 (** Direct Memory Access: given the PPU, a function to read from CPU addresses
     and a starting PPU address, blit the memory *)
 
-val next_cycle : t -> Gui.t -> unit
+val next_cycle : t -> Common.set_pixel -> unit
 (** Emulate next cycle of the PPU *)
 
 val should_render : t -> [ `No | `Yes of uint8 ]

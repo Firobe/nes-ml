@@ -442,9 +442,7 @@ module R = struct
         U16.(pal_start + (u16of8 palette_nb * 4U) + u16of8 color_nb)
       in
       let color = Mem.get t.memory address in
-      Display.set_pixel
-        Gui.(disp.display)
-        ~x:(U8.to_int x) ~y:(U8.to_int y) ~color
+      disp ~x:(U8.to_int x) ~y:(U8.to_int y) ~color
 
   let copy_bits_16 ~src ~dst mask =
     let open U16 in

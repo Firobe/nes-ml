@@ -1,37 +1,28 @@
 (** Full definition of the emulator's GUI and rendering window *)
 
-type state = {
-  mutable anim : bool;
-  mutable continue : bool;
-  mutable gui_shown : bool;
-}
+module type S = sig
+  type t
 
-type gui
+  val create : Common.cli_flags -> t
+  (** Create the emulator GUI attached to a window, and callbacks to call *)
 
-type callbacks = {
-  mutable exit : unit -> unit;
-  mutable save_state : Rom.Save_file.slot -> unit;
-  mutable load_state : Rom.Save_file.slot -> unit;
-}
+  val render : t -> unit
+  (** Refresh and render the GUI to the attached window. Return if the GUI has
+      exited *)
 
-type t = {
-  board : gui;
-  display : Display.t;
-  start : unit -> unit;
-  fps : unit -> unit;
-  state : state;
-  callbacks : callbacks;
-}
+  val toggle_gui : t -> unit -> unit
+  (** Toggle if GUI should be shown or not *)
 
-val create : Common.cli_flags -> t
-(** Create the emulator GUI attached to a window, and callbacks to call *)
+  val continue : t -> bool
+  val shown : t -> bool
+  val set_exit : t -> (unit -> unit) -> unit
+  val set_save_state : t -> (Rom.Save_file.slot -> unit) -> unit
+  val set_load_state : t -> (Rom.Save_file.slot -> unit) -> unit
+  val display : t -> Display.t
 
-val render : t -> unit
-(** Refresh and render the GUI to the attached window. Return if the GUI has
-    exited *)
+  val exit : t -> unit
+  (** Exit and destroy the main window *)
+end
 
-val toggle_gui : t -> unit -> unit
-(** Toggle if GUI should be shown or not *)
-
-val exit : t -> unit
-(** Exit and destroy the main window *)
+module Enabled : S
+module Disabled : S

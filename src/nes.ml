@@ -73,6 +73,7 @@ module Build_NES (A : Apu.S) (M : Mapper.S) (I : Input.S) :
 end
 
 module Main
+    (G : Gui.S)
     (A : Apu.S)
     (I : Input.S)
     (NES : C6502.CPU with type input := (A.t, I.t) devices) =
@@ -87,7 +88,7 @@ struct
     cli_flags : cli_flags;
   }
 
-  type io = { mutable debug : Ppu.Debug.t option; main_window : Gui.t }
+  type io = { mutable debug : Ppu.Debug.t option; main_window : G.t }
   type t = { mutable state : state; io : io }
 
   module Save_state = struct
@@ -128,7 +129,7 @@ struct
     NES.PC.init (NES.pc cpu) (NES.memory cpu);
     NES.enable_decimal cpu false;
     let state = { cpu; apu; ppu; rom; collector; input; cli_flags } in
-    let io = { debug = None; main_window = Gui.create cli_flags } in
+    let io = { debug = None; main_window = G.create cli_flags } in
     { state; io }
 
   let debug_callback t () =
@@ -151,15 +152,18 @@ struct
           toggle_gui = (fun () -> enable_gui_at_next_frame := true);
         }
     in
-    t.io.main_window.callbacks.save_state <- Save_state.save t;
-    t.io.main_window.callbacks.load_state <- Save_state.load t;
+    G.set_save_state t.io.main_window (Save_state.save t);
+    G.set_load_state t.io.main_window (Save_state.load t);
+    let set_pixel ~x ~y ~color =
+      Display.set_pixel G.(display t.io.main_window) ~x ~y ~color
+    in
     let rec aux frame =
-      if t.io.main_window.state.continue then
+      if G.continue t.io.main_window then
         if
           (* Stop emulation when GUI is displayed, and don't collect inputs *)
-          t.io.main_window.state.gui_shown
+          G.shown t.io.main_window
         then (
-          Gui.render t.io.main_window;
+          G.render t.io.main_window;
           aux (frame + 1) (* Normal emulation *))
         else (
           if frame mod 100 = 0 then I.get_inputs t.state.input callbacks;
@@ -167,18 +171,16 @@ struct
           NES.next_cycle t.state.cpu;
           let elapsed = NES.cycle_count t.state.cpu - old in
           n_times (fun () -> A.next_cycle t.state.apu) elapsed;
-          n_times
-            (fun () -> Ppu.next_cycle t.state.ppu t.io.main_window)
-            (elapsed * 3);
+          n_times (fun () -> Ppu.next_cycle t.state.ppu set_pixel) (elapsed * 3);
           (match Ppu.should_render t.state.ppu with
           | `No -> ()
           | `Yes bg_color ->
-              let disp = t.io.main_window.display in
+              let disp = G.display t.io.main_window in
               A.output_frame t.state.apu;
               I.next_frame t.state.input;
               Display.render disp;
               if !enable_gui_at_next_frame then (
-                Gui.toggle_gui t.io.main_window ();
+                G.toggle_gui t.io.main_window ();
                 enable_gui_at_next_frame := false)
               else Display.clear disp bg_color);
           Ppu.Debug.render t.state.ppu t.io.debug;
@@ -189,7 +191,7 @@ struct
 
   let close_io { io; state; _ } =
     A.exit state.apu;
-    Gui.exit io.main_window
+    G.exit io.main_window
 end
 
 let input_backend movie record =
@@ -218,7 +220,10 @@ let make_apu headless =
   let module Applied = Apu.Make (Backend) in
   (module Applied : Apu.S)
 
-let run filename movie record uncap_speed save_mp4 headless =
+let make_gui disabled =
+  if disabled then (module Gui.Disabled : Gui.S) else (module Gui.Enabled)
+
+let run filename movie record uncap_speed save_mp4 headless gui_disabled =
   let cli_flags = { uncap_speed; save_mp4 } in
   let collector = C6502.IRQ_collector.create () in
   let nmi = C6502.NMI.create () in
@@ -239,7 +244,9 @@ let run filename movie record uncap_speed save_mp4 headless =
   let module Mapper = (val mapper : Mapper.S) in
   let module Memory_Map = Build_NES (Apu) (Mapper) (Input) in
   let module NES = C6502.Make (Memory_Map) in
-  let module System = Main (Apu) (Input) (NES) in
+  let gui_m = make_gui gui_disabled in
+  let module Gui = (val gui_m : Gui.S) in
+  let module System = Main (Gui) (Apu) (Input) (NES) in
   let state = System.create { rom; apu; ppu; input } collector nmi cli_flags in
   (try System.run state
    with C6502.Invalid_instruction (addr, opcode) ->
@@ -278,6 +285,11 @@ module Command_line = struct
     let i = Arg.info [ "t"; "headless" ] ~doc in
     Arg.(value & flag i)
 
+  let gui_arg =
+    let doc = "Disable GUI" in
+    let i = Arg.info [ "g"; "disable-gui" ] ~doc in
+    Arg.(value & flag i)
+
   let speed_arg =
     let doc = "Uncap emulation speed" in
     let i = Arg.info [ "u"; "uncap" ] ~doc in
@@ -286,7 +298,7 @@ module Command_line = struct
   let run_term =
     Term.(
       const run $ rom_arg $ movie_arg $ record_arg $ speed_arg $ save_arg
-      $ headless_arg)
+      $ headless_arg $ gui_arg)
 
   let cmd =
     let doc = "experimental NES emulator written in OCaml" in
