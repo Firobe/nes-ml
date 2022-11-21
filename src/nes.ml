@@ -154,9 +154,7 @@ struct
     in
     G.set_save_state t.io.main_window (Save_state.save t);
     G.set_load_state t.io.main_window (Save_state.load t);
-    let set_pixel ~x ~y ~color =
-      Display.set_pixel G.(display t.io.main_window) ~x ~y ~color
-    in
+    let set_pixel = G.set_pixel t.io.main_window in
     let rec aux frame =
       if G.continue t.io.main_window then
         if
@@ -175,14 +173,13 @@ struct
           (match Ppu.should_render t.state.ppu with
           | `No -> ()
           | `Yes bg_color ->
-              let disp = G.display t.io.main_window in
               A.output_frame t.state.apu;
               I.next_frame t.state.input;
-              Display.render disp;
+              G.render_raw t.io.main_window;
               if !enable_gui_at_next_frame then (
                 G.toggle_gui t.io.main_window ();
                 enable_gui_at_next_frame := false)
-              else Display.clear disp bg_color);
+              else G.clear t.io.main_window bg_color);
           Ppu.Debug.render t.state.ppu t.io.debug;
           aux (frame + 1))
     in
@@ -220,10 +217,21 @@ let make_apu headless =
   let module Applied = Apu.Make (Backend) in
   (module Applied : Apu.S)
 
-let make_gui disabled =
-  if disabled then (module Gui.Disabled : Gui.S) else (module Gui.Enabled)
+let make_gui headless disabled =
+  let gui_func =
+    if disabled then (module Gui.Disabled : Gui.SF) else (module Gui.Enabled)
+  in
+  let display =
+    if headless then (module Display.Headless_backend : Display.S)
+    else (module Display.Sdl_backend)
+  in
+  let module Gui_func = (val gui_func) in
+  let module Display = (val display) in
+  let module Applied = Gui_func (Display) in
+  (module Applied : Gui.S)
 
 let run filename movie record uncap_speed save_mp4 headless gui_disabled =
+  let gui_disabled = if headless then true else gui_disabled in
   let cli_flags = { uncap_speed; save_mp4 } in
   let collector = C6502.IRQ_collector.create () in
   let nmi = C6502.NMI.create () in
@@ -244,7 +252,7 @@ let run filename movie record uncap_speed save_mp4 headless gui_disabled =
   let module Mapper = (val mapper : Mapper.S) in
   let module Memory_Map = Build_NES (Apu) (Mapper) (Input) in
   let module NES = C6502.Make (Memory_Map) in
-  let gui_m = make_gui gui_disabled in
+  let gui_m = make_gui headless gui_disabled in
   let module Gui = (val gui_m : Gui.S) in
   let module System = Main (Gui) (Apu) (Input) (NES) in
   let state = System.create { rom; apu; ppu; input } collector nmi cli_flags in

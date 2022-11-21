@@ -13,16 +13,20 @@ module type S = sig
   val toggle_gui : t -> unit -> unit
   (** Toggle if GUI should be shown or not *)
 
+  val set_pixel : t -> Common.set_pixel
+  val render_raw : t -> unit
+  val clear : t -> Stdint.uint8 -> unit
   val continue : t -> bool
   val shown : t -> bool
   val set_exit : t -> (unit -> unit) -> unit
   val set_save_state : t -> (Rom.Save_file.slot -> unit) -> unit
   val set_load_state : t -> (Rom.Save_file.slot -> unit) -> unit
-  val display : t -> Display.t
 
   val exit : t -> unit
   (** Exit and destroy the main window *)
 end
 
-module Enabled : S
-module Disabled : S
+module type SF = functor (D : Display.S) -> S
+
+module Enabled : SF
+module Disabled : SF

@@ -59,10 +59,10 @@ Note that the `N` for save states must be 1, 2 or 3.
 - Barebones GUI (with debugging windows showing the internal PPU state)
 - Movie (input log) recording and replaying (in custom format with subframe precision)
 - Ability to record video (lossless `mp4`) of runs with ffmpeg
+- Headless mode for automatic tests
 
 ## Next steps
 
-- Implement headless backend for automatic tests
 - Implement mappers 1, 4
 
 ## Based on

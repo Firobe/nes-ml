@@ -31,7 +31,7 @@ let videos_equal name v1 v2 =
   in
   let m1 = get_md5 v1 in
   let m2 = get_md5 v2 in
-  Printf.printf "%s\n=============\nv1: %s\nv2: %s\n" name m1 m2;
+  Printf.printf "%s\n=============\nv1: %s\nv2: %s\n%!" name m1 m2;
   m1 = m2
 
 let test_case name =

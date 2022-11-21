@@ -777,6 +777,8 @@ let should_render t =
 let next_cycle = R.next_cycle
 
 module Debug = struct
+  module Display = Display.Sdl_backend
+
   type t = {
     names : Display.t;
     attributes : Display.t;

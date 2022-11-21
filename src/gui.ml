@@ -4,34 +4,40 @@ module type S = sig
   val create : Common.cli_flags -> t
   val render : t -> unit
   val toggle_gui : t -> unit -> unit
+  val set_pixel : t -> Common.set_pixel
+  val render_raw : t -> unit
+  val clear : t -> Stdint.uint8 -> unit
   val continue : t -> bool
   val shown : t -> bool
   val set_exit : t -> (unit -> unit) -> unit
   val set_save_state : t -> (Rom.Save_file.slot -> unit) -> unit
   val set_load_state : t -> (Rom.Save_file.slot -> unit) -> unit
-  val display : t -> Display.t
   val exit : t -> unit
 end
 
-module Disabled = struct
-  type t = Display.t
+module type SF = functor (D : Display.S) -> S
 
-  let create cli_flags = Ppu_display.create cli_flags
-  let render t = Display.render t
+module Disabled (D : Display.S) : S = struct
+  type t = D.t
+
+  let create cli_flags = Ppu_display.create D.create cli_flags
+  let render_raw t = D.render t
+  let clear = D.clear
+  let set_pixel = D.set_pixel
+  let render t = D.render t
   let toggle_gui _ _ = ()
   let continue _ = true
   let shown _ = false
   let set_exit _ _ = ()
   let set_save_state _ _ = ()
   let set_load_state _ _ = ()
-  let display t = t
 
   let exit t =
-    Display.delete t;
-    Display.exit ()
+    D.delete t;
+    D.exit ()
 end
 
-module Enabled : S = struct
+module Enabled (D : Display.S) : S = struct
   open Bogue
   module W = Widget
   module L = Layout
@@ -52,14 +58,16 @@ module Enabled : S = struct
 
   type t = {
     board : gui;
-    display : Display.t;
+    display : D.t;
     start : unit -> unit;
     fps : unit -> unit;
     state : state;
     callbacks : callbacks;
   }
 
-  let display t = t.display
+  let set_pixel t = D.set_pixel t.display
+  let render_raw t = D.render t.display
+  let clear t = D.clear t.display
   let continue t = t.state.continue
   let shown t = t.state.gui_shown
   let set_exit t f = t.callbacks.exit <- f
@@ -141,9 +149,9 @@ module Enabled : S = struct
     (board, start, fps)
 
   let create cli_flags =
-    let display = Ppu_display.create cli_flags in
+    let display = Ppu_display.create D.create cli_flags in
     let state = { anim = false; gui_shown = false; continue = true } in
-    let window = Display.get_window display in
+    let window = D.get_window display in
     let callbacks =
       {
         exit = (fun () -> state.continue <- false);
@@ -169,9 +177,9 @@ module Enabled : S = struct
       if t.state.gui_shown then
         match render_gui t with `Continue -> () | `Exited -> toggle_gui t ()
     in
-    Display.render ~after t.display
+    D.render ~after t.display
 
   let exit t =
-    Display.delete t.display;
-    Display.exit ()
+    D.delete t.display;
+    D.exit ()
 end

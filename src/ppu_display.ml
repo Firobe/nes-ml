@@ -66,7 +66,17 @@ let palette =
     0x000000;
   ]
 
-let create cli_flags =
+type 'a display_create =
+  width:int ->
+  height:int ->
+  scale:int ->
+  palette:int list ->
+  ?vsync:bool ->
+  ?save:string ->
+  string ->
+  'a
+
+let create (f : 'a display_create) cli_flags =
   let vsync = not cli_flags.Common.uncap_speed in
   let save = cli_flags.save_mp4 in
-  Display.create ~width:256 ~height:240 ~scale:4 ~palette ~vsync ?save "NES"
+  f ~width:256 ~height:240 ~scale:4 ~palette ~vsync ?save "NES"
