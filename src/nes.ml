@@ -6,11 +6,6 @@ let load_rom_memory ppu rom =
     (Array.map C6502.Utils.u8 rom.chr_rom)
     rom.config.chr_rom_size
 
-let rec n_times f n =
-  if n > 0 then (
-    f ();
-    n_times f (n - 1))
-
 type ('apu, 'input) devices = {
   rom : Rom.t;
   apu : 'apu;
@@ -168,11 +163,15 @@ struct
           let old = NES.cycle_count t.state.cpu in
           NES.next_cycle t.state.cpu;
           let elapsed = NES.cycle_count t.state.cpu - old in
-          n_times (fun () -> A.next_cycle t.state.apu) elapsed;
-          n_times (fun () -> Ppu.next_cycle t.state.ppu set_pixel) (elapsed * 3);
+          for _ = 1 to elapsed do
+            A.next_cycle t.state.apu
+          done;
+          for _ = 1 to elapsed * 3 do
+            Ppu.next_cycle t.state.ppu set_pixel
+          done;
           (match Ppu.should_render t.state.ppu with
-          | `No -> ()
-          | `Yes bg_color ->
+          | None -> ()
+          | Some bg_color ->
               A.output_frame t.state.apu;
               I.next_frame t.state.input;
               G.render_raw t.io.main_window;

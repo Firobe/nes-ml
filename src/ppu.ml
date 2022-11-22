@@ -285,7 +285,7 @@ type t = {
   nmi : C6502.NMI.t;
   mutable fine_x_scroll : U8.t;
   mutable vram_buffer : U8.t;
-  mutable should_render : [ `No | `Yes of Stdint.uint8 ];
+  mutable should_render : Stdint.uint8 option;
 }
 
 let create mirroring_mode nmi =
@@ -301,7 +301,7 @@ let create mirroring_mode nmi =
     fine_x_scroll = 0u;
     (* Latch for PPUSCROLL and PPUADDR *)
     vram_buffer = 0u;
-    should_render = `No;
+    should_render = None;
   }
 
 let init_memory t src size = Array.blit src 0 t.memory.main 0x0 size
@@ -733,7 +733,7 @@ module R = struct
     else if r.cycle = 340 then (
       t.status.sprite_0_hit <- false;
       r.frame <- r.frame + 1;
-      t.should_render <- `Yes t.memory.main.(0x3F00);
+      t.should_render <- Some t.memory.main.(0x3F00);
       (* this should be at cycle 1 *)
       (* Odd frame : jump to (0, 0) directly *)
       if r.frame mod 2 = 1 && Graphics.is_rendering t.graphics then (
@@ -771,7 +771,7 @@ end
 
 let should_render t =
   let old = t.should_render in
-  t.should_render <- `No;
+  t.should_render <- None;
   old
 
 let next_cycle = R.next_cycle

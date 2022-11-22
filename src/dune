@@ -2,6 +2,8 @@
  (name nes)
  (public_name nes-ml)
  (package nes-ml)
+ (modes native)
+ (ocamlopt_flags -g)
  (preprocess
   (pps stdint-literals))
  (libraries 6502-ml tsdl bos stdint fpath digestif str cmdliner bogue))

@@ -32,7 +32,7 @@ val dma : t -> (uint16 -> uint8) -> uint16 -> unit
 val next_cycle : t -> Common.set_pixel -> unit
 (** Emulate next cycle of the PPU *)
 
-val should_render : t -> [ `No | `Yes of uint8 ]
+val should_render : t -> uint8 option
 
 (** Create and destroy the windows dedicated to the PPU debugging *)
 module Debug : sig
