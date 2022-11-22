@@ -14,6 +14,8 @@ module Make (M : Stdint.Int) = struct
   let ( ?@ ) = M.of_int
 end
 
+(* for some reason, functions from these modules cannot be inlined while
+   functions from Stdint.Uint8 and Uint16 can... *)
 module Common = struct
   module U8 = Make (Stdint.Uint8)
   module U16 = Make (Stdint.Uint16)

@@ -483,6 +483,8 @@ module R = struct
     bank + offset + finey
 
   let fetch_next_data t =
+    let module U8 = Stdint.Uint8 in
+    let module U16 = Stdint.Uint16 in
     let r = t.rendering in
     (* Step number in the fetching process *)
     let local_step = r.cycle mod 8 in
@@ -499,37 +501,46 @@ module R = struct
           (* Reload shifters *)
           r.bg.low <- mk_addr ~lo:r.bg.next_low ~hi:(get_hi r.bg.low);
           r.bg.high <- mk_addr ~lo:r.bg.next_high ~hi:(get_hi r.bg.high);
-          r.at.low_next <- U8.(0x1u $& r.at.next <> 0u);
-          r.at.high_next <- U8.(0x2u $& r.at.next <> 0u));
+          r.at.low_next <- U8.(logand 0x1u r.at.next <> 0u);
+          r.at.high_next <- U8.(logand 0x2u r.at.next <> 0u));
         (* load r.nt byte to shift8_r.nt_next *)
         let v = t.memory.address in
-        let tile_address = 0x2000U $| (v $& 0xFFFU) in
+        let tile_address = logor 0x2000U (logand v 0xFFFU) in
         r.nt.next <- Mem.get t.memory tile_address
     | 3 ->
         (* load r.at byte to shift8_r.at_next *)
         (* stolen from mesen *)
         let v = t.memory.address in
         let addr =
-          0x23C0U $| (v $& 0x0C00U) $| (v $>> 4 $& 0x38U) $| (v $>> 2 $& 0x7U)
+          logor 0x23C0U
+            (logor
+               (logor (logand v 0x0C00U)
+                  (logand (shift_right_logical v 4) 0x38U))
+               (logand (shift_right_logical v 2) 0x7U))
         in
-        let data = ?$(Mem.get t.memory addr) in
-        let shift = ?%(0x04U $& (v $>> 4) $| (v $& 0x02U)) in
-        r.at.next <- U8.( ?$$ ) (0x3U $& (data $>> shift))
+        let data = of_uint8 (Mem.get t.memory addr) in
+        let shift =
+          to_int
+            (logor (logand 0x04U (shift_right_logical v 4)) (logand v 0x02U))
+        in
+        r.at.next <- to_uint8 (logand 0x3U (shift_right_logical data shift))
     | 5 ->
         (* load low r.bg tile byte to next_r.bg_low (pr.attern table) *)
-        let offset = ?$(r.nt.next) in
+        let offset = of_uint8 r.nt.next in
         let bank = t.control.background_pattern_address in
         let addr = pat_address t ~bank ~offset in
         r.bg.next_low <- Mem.get t.memory addr
     | 7 ->
         (* load high r.bg tile byte to next_r.bg_high *)
-        let offset = ?$(r.nt.next) in
+        let offset = of_uint8 r.nt.next in
         let bank = t.control.background_pattern_address in
         let addr = pat_address t ~bank ~offset in
         r.bg.next_high <- Mem.get t.memory (addr + 8U)
     | _ -> ()
 
   let render_pixel t disp =
+    let module U8 = Stdint.Uint8 in
+    let module U16 = Stdint.Uint16 in
     let r = t.rendering in
     let x = U8.of_int (r.cycle - 1) in
     let y = U8.of_int r.scanline in
@@ -537,45 +548,50 @@ module R = struct
       if t.graphics.background then
         let scroll1 = 15 - U8.to_int t.fine_x_scroll in
         let scroll2 = 7 - U8.to_int t.fine_x_scroll in
-        let open U16 in
-        let patl = r.bg.low $>> scroll1 $& 0x1U in
-        let path = r.bg.high $>> scroll1 $& 0x1U in
-        let pat = U8.( ?$$ ) (patl $| (path $<< 1)) in
-        let open U8 in
+        let rbglow = U16.to_int r.bg.low in
+        let rbghigh = U16.to_int r.bg.high in
+        let patl = (rbglow lsr scroll1) land 1 in
+        let path = (rbghigh lsr scroll1) land 1 in
+        let pat = patl lor (path lsl 1) land 0xFF in
+        let rathigh = U8.to_int r.at.high in
+        let ratlow = U8.to_int r.at.low in
         let pal =
-          r.at.high $>> scroll2 $<< 1 $| (r.at.low $>> scroll2 $& 1u) $& 3u
+          ((rathigh lsr scroll2) lsl 1) lor ((ratlow lsr scroll2) land 1) land 3
         in
+        let pat = U8.of_int pat in
+        let pal = U8.of_int pal in
         (pat, pal)
       else (0u, 0u)
     in
     let spat, spal, priority, sprite_0 =
       if t.graphics.sprites then OAM.pixel t.oam else (0u, 0u, false, false)
     in
-    let draw = draw_pixel t disp x y in
-    match U8.(?%pat, ?%spat, priority) with
-    | _, 0, _ -> draw 0x3F00U ~pal ~pat
-    | 0, _, _ -> draw 0x3F10U ~pal:spal ~pat:spat
+    match U8.(to_int pat, to_int spat, priority) with
+    | _, 0, _ -> draw_pixel t disp x y 0x3F00U ~pal ~pat
+    | 0, _, _ -> draw_pixel t disp x y 0x3F10U ~pal:spal ~pat:spat
     | _, _, false ->
         if sprite_0 then t.status.sprite_0_hit <- true;
-        draw 0x3F10U ~pal:spal ~pat:spat
+        draw_pixel t disp x y 0x3F10U ~pal:spal ~pat:spat
     | _, _, true ->
         if sprite_0 then t.status.sprite_0_hit <- true;
-        draw 0x3F00U ~pal ~pat
+        draw_pixel t disp x y 0x3F00U ~pal ~pat
 
   let shift_registers t =
+    let module U8 = Stdint.Uint8 in
+    let module U16 = Stdint.Uint16 in
     let r = t.rendering in
-    r.bg.low <- U16.(r.bg.low $<< 1);
-    r.bg.high <- U16.(r.bg.high $<< 1);
-    r.at.low <- U8.(r.at.low $<< 1);
-    r.at.high <- U8.(r.at.high $<< 1);
-    r.at.low <- (if r.at.low_next then U8.(r.at.low $| 1u) else r.at.low);
-    r.at.high <- (if r.at.high_next then U8.(r.at.high $| 1u) else r.at.high);
+    r.bg.low <- U16.(shift_left r.bg.low 1);
+    r.bg.high <- U16.(shift_left r.bg.high 1);
+    r.at.low <- U8.(shift_left r.at.low 1);
+    r.at.high <- U8.(shift_left r.at.high 1);
+    r.at.low <- (if r.at.low_next then U8.(logor r.at.low 1u) else r.at.low);
+    r.at.high <- (if r.at.high_next then U8.(logor r.at.high 1u) else r.at.high);
     for i = 0 to t.oam.last_sprite_this_scanline do
       (* sprite is active *)
       if t.oam.counters.(i) = 0u then (
         let low, high = t.oam.render_shifters.(i) in
-        (low := U8.(!low $<< 1));
-        high := U8.(!high $<< 1))
+        (low := U8.(shift_left !low 1));
+        high := U8.(shift_left !high 1))
     done
 
   let data_fetching t disp render =
