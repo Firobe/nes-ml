@@ -1,29 +1,23 @@
 open Common
 
-let load_rom_memory ppu rom =
-  let open Rom in
-  Ppu.init_memory ppu
-    (Array.map C6502.Utils.u8 rom.chr_rom)
-    rom.config.chr_rom_size
-
-type ('apu, 'input) devices = {
+type ('ppu, 'apu, 'input) devices = {
   rom : Rom.t;
   apu : 'apu;
-  ppu : Ppu.t;
+  ppu : 'ppu;
   input : 'input;
 }
 
-module Build_NES (A : Apu.S) (M : Mapper.S) (I : Input.S) :
-  C6502.MemoryMap with type input = (A.t, I.t) devices = struct
+module Build_NES (P : Ppu.S) (A : Apu.S) (M : Mapper.S') (I : Input.S) :
+  C6502.MemoryMap with type input = (P.t, A.t, I.t) devices = struct
   open Infix_int.Common
 
-  type input = (A.t, I.t) devices
+  type input = (P.t, A.t, I.t) devices
 
   type t = {
     main : U8.t array;
     mapper : M.t;
     apu : A.t;
-    ppu : Ppu.t;
+    ppu : P.t;
     input : I.t;
   }
 
@@ -51,7 +45,7 @@ module Build_NES (A : Apu.S) (M : Mapper.S) (I : Input.S) :
   let read t (a : U16.t) : U8.t =
     let open U16 in
     let a = address_mirroring a in
-    if is_in_ppu_range a then Ppu.get_register t.ppu (to_int (logand a 7U))
+    if is_in_ppu_range a then P.get_register t.ppu (to_int (logand a 7U))
     else if a = 0x4015U then A.read_register t.apu a
     else if a = 0x4016U then I.next_register t.input
     else if is_in_cartridge_range a then M.read t.mapper a
@@ -60,30 +54,31 @@ module Build_NES (A : Apu.S) (M : Mapper.S) (I : Input.S) :
   let write t (a : U16.t) (v : U8.t) =
     let open U16 in
     let a = address_mirroring a in
-    if is_in_ppu_range a then Ppu.set_register t.ppu (to_int (logand a 7U)) v
+    if is_in_ppu_range a then P.set_register t.ppu (to_int (logand a 7U)) v
     else if is_in_apu_range a then A.write_register t.apu v a
-    else if a = 0x4014U then Ppu.dma t.ppu (read t) (?$v $<< 8)
+    else if a = 0x4014U then P.dma t.ppu (read t) (?$v $<< 8)
     else if is_in_cartridge_range a then M.write t.mapper a v
     else t.main.(?%a) <- v
 end
 
 module Main
+    (P : Ppu.S)
     (G : Gui.S)
     (A : Apu.S)
     (I : Input.S)
-    (NES : C6502.CPU with type input := (A.t, I.t) devices) =
+    (NES : C6502.CPU with type input := (P.t, A.t, I.t) devices) =
 struct
   type state = {
     cpu : NES.t;
     apu : A.t;
-    ppu : Ppu.t;
+    ppu : P.t;
     rom : Rom.t;
     collector : C6502.IRQ_collector.t;
     input : I.t;
     cli_flags : cli_flags;
   }
 
-  type io = { mutable debug : Ppu.Debug.t option; main_window : G.t }
+  type io = { mutable debug : P.Debug.t option; main_window : G.t }
   type t = { mutable state : state; io : io }
 
   module Save_state = struct
@@ -115,10 +110,9 @@ struct
             msg
   end
 
-  let create ({ apu; rom; ppu; input } : (A.t, I.t) devices) collector nmi
+  let create ({ apu; rom; ppu; input } : (P.t, A.t, I.t) devices) collector nmi
       cli_flags =
     let cpu = NES.create ~collector ~nmi { apu; rom; ppu; input } in
-    load_rom_memory ppu rom;
     NES.Register.set (NES.registers cpu) `S 0xFDu;
     NES.Register.set (NES.registers cpu) `P 0x34u;
     NES.PC.init (NES.pc cpu) (NES.memory cpu);
@@ -129,9 +123,9 @@ struct
 
   let debug_callback t () =
     match t.io.debug with
-    | None -> t.io.debug <- Some (Ppu.Debug.create ())
+    | None -> t.io.debug <- Some (P.Debug.create ())
     | Some d ->
-        Ppu.Debug.delete d;
+        P.Debug.delete d;
         t.io.debug <- None
 
   let run t =
@@ -167,9 +161,9 @@ struct
             A.next_cycle t.state.apu
           done;
           for _ = 1 to elapsed * 3 do
-            Ppu.next_cycle t.state.ppu set_pixel
+            P.next_cycle t.state.ppu set_pixel
           done;
-          (match Ppu.should_render t.state.ppu with
+          (match P.should_render t.state.ppu with
           | None -> ()
           | Some bg_color ->
               A.output_frame t.state.apu;
@@ -179,7 +173,7 @@ struct
                 G.toggle_gui t.io.main_window ();
                 enable_gui_at_next_frame := false)
               else G.clear t.io.main_window bg_color);
-          Ppu.Debug.render t.state.ppu t.io.debug;
+          P.Debug.render t.state.ppu t.io.debug;
           aux (frame + 1))
     in
     try aux 0
@@ -238,10 +232,6 @@ let run filename movie record uncap_speed save_mp4 headless gui_disabled =
   let apu_m = make_apu headless in
   let module Apu = (val apu_m : Apu.S) in
   let apu = Apu.create collector cli_flags in
-  let mirroring =
-    if rom.config.mirroring then Ppu.Vertical else Ppu.Horizontal
-  in
-  let ppu = Ppu.create mirroring nmi in
   let input_backend = input_backend movie record in
   let module Input_backend = (val input_backend : Input.Backend) in
   let module Input = Input.Make (Input_backend) in
@@ -249,11 +239,13 @@ let run filename movie record uncap_speed save_mp4 headless gui_disabled =
   let mapper = Mapper.find rom in
   (* Create the CPU from the Mapper and ROM *)
   let module Mapper = (val mapper : Mapper.S) in
-  let module Memory_Map = Build_NES (Apu) (Mapper) (Input) in
+  let module Ppu = Ppu.Make (Mapper.PPU) in
+  let ppu = Ppu.create rom nmi in
+  let module Memory_Map = Build_NES (Ppu) (Apu) (Mapper.CPU) (Input) in
   let module NES = C6502.Make (Memory_Map) in
   let gui_m = make_gui headless gui_disabled in
   let module Gui = (val gui_m : Gui.S) in
-  let module System = Main (Gui) (Apu) (Input) (NES) in
+  let module System = Main (Ppu) (Gui) (Apu) (Input) (NES) in
   let state = System.create { rom; apu; ppu; input } collector nmi cli_flags in
   (try System.run state
    with C6502.Invalid_instruction (addr, opcode) ->
