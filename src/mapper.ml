@@ -90,7 +90,18 @@ module UxROM : S = struct
   module PPU = PPU_Basic
 end
 
-let mappers = [ (0, (module NROM : S)); (2, (module UxROM)) ]
+module UN1ROM : S = struct
+  module CPU = struct
+    include UxROM.CPU
+
+    let write t x v = write t x U8.(v $>> 2 $& 0b111u)
+  end
+
+  module PPU = PPU_Basic
+end
+
+let mappers =
+  [ (0, (module NROM : S)); (2, (module UxROM)); (94, (module UN1ROM)) ]
 
 let find rom =
   let open Rom in
