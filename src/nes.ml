@@ -1,17 +1,18 @@
 open Common
 
-type ('ppu, 'apu, 'input) devices = {
+type ('ppu, 'apu, 'input, 'mapper) devices = {
   rom : Rom.t;
+  mapper : 'mapper;
   apu : 'apu;
   ppu : 'ppu;
   input : 'input;
 }
 
-module Build_NES (P : Ppu.S) (A : Apu.S) (M : Mapper.S') (I : Input.S) :
-  C6502.MemoryMap with type input = (P.t, A.t, I.t) devices = struct
+module Build_NES (P : Ppu.S) (A : Apu.S) (M : Mapper.S) (I : Input.S) :
+  C6502.MemoryMap with type input = (P.t, A.t, I.t, M.t) devices = struct
   open Infix_int.Common
 
-  type input = (P.t, A.t, I.t) devices
+  type input = (P.t, A.t, I.t, M.t) devices
 
   type t = {
     main : U8.t array;
@@ -21,8 +22,8 @@ module Build_NES (P : Ppu.S) (A : Apu.S) (M : Mapper.S') (I : Input.S) :
     input : I.t;
   }
 
-  let create { rom; apu; ppu; input } =
-    { main = Array.make 0x8000 0u; mapper = M.create rom; input; apu; ppu }
+  let create ({ mapper; apu; ppu; input; _ } : input) =
+    { main = Array.make 0x8000 0u; mapper; input; apu; ppu }
 
   (* Utils *)
   let is_in_ppu_range addr = addr >= 0x2000U && addr <= 0x2007U
@@ -48,7 +49,7 @@ module Build_NES (P : Ppu.S) (A : Apu.S) (M : Mapper.S') (I : Input.S) :
     if is_in_ppu_range a then P.get_register t.ppu (to_int (logand a 7U))
     else if a = 0x4015U then A.read_register t.apu a
     else if a = 0x4016U then I.next_register t.input
-    else if is_in_cartridge_range a then M.read t.mapper a
+    else if is_in_cartridge_range a then M.CPU.read t.mapper a
     else t.main.(?%a)
 
   let write t (a : U16.t) (v : U8.t) =
@@ -57,7 +58,7 @@ module Build_NES (P : Ppu.S) (A : Apu.S) (M : Mapper.S') (I : Input.S) :
     if is_in_ppu_range a then P.set_register t.ppu (to_int (logand a 7U)) v
     else if is_in_apu_range a then A.write_register t.apu v a
     else if a = 0x4014U then P.dma t.ppu (read t) (?$v $<< 8)
-    else if is_in_cartridge_range a then M.write t.mapper a v
+    else if is_in_cartridge_range a then M.CPU.write t.mapper a v
     else t.main.(?%a) <- v
 end
 
@@ -65,8 +66,9 @@ module Main
     (P : Ppu.S)
     (G : Gui.S)
     (A : Apu.S)
+    (M : Mapper.S)
     (I : Input.S)
-    (NES : C6502.CPU with type input := (P.t, A.t, I.t) devices) =
+    (NES : C6502.CPU with type input := (P.t, A.t, I.t, M.t) devices) =
 struct
   type state = {
     cpu : NES.t;
@@ -110,14 +112,14 @@ struct
             msg
   end
 
-  let create ({ apu; rom; ppu; input } : (P.t, A.t, I.t) devices) collector nmi
-      cli_flags =
-    let cpu = NES.create ~collector ~nmi { apu; rom; ppu; input } in
+  let create ({ apu; ppu; input; rom; _ } as d : (P.t, A.t, I.t, M.t) devices)
+      collector nmi cli_flags =
+    let cpu = NES.create ~collector ~nmi d in
     NES.Register.set (NES.registers cpu) `S 0xFDu;
     NES.Register.set (NES.registers cpu) `P 0x34u;
     NES.PC.init (NES.pc cpu) (NES.memory cpu);
     NES.enable_decimal cpu false;
-    let state = { cpu; apu; ppu; rom; collector; input; cli_flags } in
+    let state = { cpu; apu; ppu; collector; input; cli_flags; rom } in
     let io = { debug = None; main_window = G.create cli_flags } in
     { state; io }
 
@@ -239,14 +241,17 @@ let run filename movie record uncap_speed save_mp4 headless gui_disabled =
   let mapper = Mapper.find rom in
   (* Create the CPU from the Mapper and ROM *)
   let module Mapper = (val mapper : Mapper.S) in
-  let module Ppu = Ppu.Make (Mapper.PPU) in
-  let ppu = Ppu.create rom nmi in
-  let module Memory_Map = Build_NES (Ppu) (Apu) (Mapper.CPU) (Input) in
+  let mapper = Mapper.create rom in
+  let module Ppu = Ppu.Make (Mapper) in
+  let ppu = Ppu.create mapper nmi in
+  let module Memory_Map = Build_NES (Ppu) (Apu) (Mapper) (Input) in
   let module NES = C6502.Make (Memory_Map) in
   let gui_m = make_gui headless gui_disabled in
   let module Gui = (val gui_m : Gui.S) in
-  let module System = Main (Ppu) (Gui) (Apu) (Input) (NES) in
-  let state = System.create { rom; apu; ppu; input } collector nmi cli_flags in
+  let module System = Main (Ppu) (Gui) (Apu) (Mapper) (Input) (NES) in
+  let state =
+    System.create { mapper; rom; apu; ppu; input } collector nmi cli_flags
+  in
   (try System.run state
    with C6502.Invalid_instruction (addr, opcode) ->
      Format.printf

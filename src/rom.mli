@@ -14,7 +14,7 @@ type rom_config = {
   playchoice_10 : bool;
   prg_ram_size : int;
   mapper_nb : int;
-  tv_system : [`NTSC | `PAL];
+  tv_system : [ `NTSC | `PAL ];
 }
 (** The various iNES header attributes *)
 

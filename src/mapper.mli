@@ -1,10 +1,21 @@
 (** NES cartridge mappers, as first-class modules *)
 
-module type S' = C6502.MemoryMap with type input := Rom.t
+open Stdint
+
+module type S' = sig
+  type t
+
+  val read : t -> uint16 -> uint8
+  val write : t -> uint16 -> uint8 -> unit
+end
 
 module type S = sig
-  module CPU : S'
-  module PPU : S'
+  type t
+
+  val create : Rom.t -> t
+
+  module CPU : S' with type t := t
+  module PPU : S' with type t := t
 end
 
 val find : Rom.t -> (module S)

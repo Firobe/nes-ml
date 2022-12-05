@@ -4,8 +4,9 @@ open Stdint
 
 module type S = sig
   type t
+  type mapper
 
-  val create : Rom.t -> C6502.NMI.t -> t
+  val create : mapper -> C6502.NMI.t -> t
   (** Create the chip from a fixed mirroring kind and a NMI channel to the CPU *)
 
   val frame : t -> int
@@ -37,4 +38,4 @@ module type S = sig
   end
 end
 
-module Make (M : C6502.MemoryMap with type input := Rom.t) : S
+module Make (M : Mapper.S) : S with type mapper = M.t

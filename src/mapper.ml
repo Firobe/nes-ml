@@ -1,46 +1,62 @@
 open Infix_int.Common
 
-module type S' = C6502.MemoryMap with type input := Rom.t
+module type S' = sig
+  type t
+
+  val read : t -> U16.t -> U8.t
+  val write : t -> U16.t -> U8.t -> unit
+end
 
 module type S = sig
-  module CPU : S'
-  module PPU : S'
+  type t
+
+  val create : Rom.t -> t
+
+  module CPU : S' with type t := t
+  module PPU : S' with type t := t
 end
 
 module PPU_Basic = struct
   type mirroring = Horizontal | Vertical
   type t = { m : U8.t array; mirroring : mirroring }
 
-  let create rom =
-    let open Rom in
-    let mirroring = if rom.config.mirroring then Vertical else Horizontal in
-    let m = Array.make 0x4000 0u in
-    Array.blit
-      (Array.map C6502.Utils.u8 rom.chr_rom)
-      0 m 0x0 rom.config.chr_rom_size;
-    { m; mirroring }
+  module Make (A : sig
+    type outer
 
-  let nametable_mirroring t v =
-    match t.mirroring with
-    | Horizontal -> U16.(v $& ?~0x400U)
-    | Vertical -> U16.(v $& ?~0x800U)
-  (*| Single -> U16.(v $& ?~0xC00U)*)
+    val get : outer -> t
+  end) =
+  struct
+    let create rom =
+      let open Rom in
+      let mirroring = if rom.config.mirroring then Vertical else Horizontal in
+      let m = Array.make 0x4000 0u in
+      Array.blit
+        (Array.map C6502.Utils.u8 rom.chr_rom)
+        0 m 0x0 rom.config.chr_rom_size;
+      { m; mirroring }
 
-  let mirroring t v =
-    if v <= 0x1FFFU then v
-    else if v <= 0x2FFFU then nametable_mirroring t v
-    else v
+    let nametable_mirroring t v =
+      match t.mirroring with
+      | Horizontal -> U16.(v $& ?~0x400U)
+      | Vertical -> U16.(v $& ?~0x800U)
+    (*| Single -> U16.(v $& ?~0xC00U)*)
 
-  open U16
+    let mirroring t v =
+      if v <= 0x1FFFU then v
+      else if v <= 0x2FFFU then nametable_mirroring t v
+      else v
 
-  let read t a = t.m.(?%(mirroring t a))
-  let write t a v = t.m.(?%(mirroring t a)) <- v
+    open U16
+
+    let read t a = (A.get t).m.(?%(mirroring (A.get t) a))
+    let write t a v = (A.get t).m.(?%(mirroring (A.get t) a)) <- v
+  end
 end
 
 module NROM : S = struct
-  module CPU = struct
-    type t = U8.t array
+  type t = { prg : U8.t array; chr : PPU_Basic.t }
 
+  module CPU = struct
     let create rom =
       let open Rom in
       let bank_nb = rom.config.prg_rom_size / 0x4000 in
@@ -54,17 +70,24 @@ module NROM : S = struct
 
     open U16
 
-    let read t a = t.(?%(a $& 0x7FFFU))
-    let write t a v = t.(?%(a $& 0x7FFFU)) <- v
+    let read t a = t.prg.(?%(a $& 0x7FFFU))
+    let write t a v = t.prg.(?%(a $& 0x7FFFU)) <- v
   end
 
-  module PPU = PPU_Basic
+  module PPU = PPU_Basic.Make (struct
+    type outer = t
+
+    let get { chr; _ } = chr
+  end)
+
+  let create rom = { prg = CPU.create rom; chr = PPU.create rom }
 end
 
 module UxROM : S = struct
-  module CPU = struct
-    type t = { banks : U8.t array array; mutable selected : int }
+  type prg = { banks : U8.t array array; mutable selected : int }
+  type t = { prg : prg; chr : PPU_Basic.t }
 
+  module CPU = struct
     let create rom =
       let open Rom in
       let bank_nb = rom.config.prg_rom_size / 0x4000 in
@@ -76,32 +99,32 @@ module UxROM : S = struct
       let banks = Array.map (Array.map C6502.Utils.u8) banks in
       { banks; selected = 0 }
 
-    let last_bank t = t.banks.(Array.length t.banks - 1)
+    let last_bank t = t.prg.banks.(Array.length t.prg.banks - 1)
 
     open U16
 
     let read t a =
       if a >= 0xC000U then (last_bank t).(?%(a $& 0X3FFFU))
-      else t.banks.(t.selected).(?%(a $& 0x3FFFU))
+      else t.prg.banks.(t.prg.selected).(?%(a $& 0x3FFFU))
 
-    let write t _ v = t.selected <- U8.to_int v
+    let write t _ v = t.prg.selected <- U8.to_int v
   end
 
-  module PPU = PPU_Basic
+  module PPU = PPU_Basic.Make (struct
+    type outer = t
+
+    let get { chr; _ } = chr
+  end)
+
+  let create rom = { prg = CPU.create rom; chr = PPU.create rom }
 end
 
-module UN1ROM : S = struct
-  module CPU = struct
-    include UxROM.CPU
-
-    let write t x v = write t x U8.(v $>> 2 $& 0b111u)
-  end
-
-  module PPU = PPU_Basic
+module MMC3 = struct
+  module CPU = struct end
+  module PPU = struct end
 end
 
-let mappers =
-  [ (0, (module NROM : S)); (2, (module UxROM)); (94, (module UN1ROM)) ]
+let mappers = [ (0, (module NROM : S)); (2, (module UxROM)) ]
 
 let find rom =
   let open Rom in

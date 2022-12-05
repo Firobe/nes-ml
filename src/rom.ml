@@ -11,7 +11,7 @@ type rom_config = {
   playchoice_10 : bool;
   prg_ram_size : int;
   mapper_nb : int;
-  tv_system : [`NTSC | `PAL];
+  tv_system : [ `NTSC | `PAL ];
 }
 
 type t = {
@@ -70,9 +70,9 @@ let read_header rom =
   if rom.(0) != 0x4E || rom.(1) != 0x45 || rom.(2) != 0x53 || rom.(3) != 0x1A
   then raise (Invalid_ROM "Wrong NES header");
   let nes2 = rom.(7) land 0b1100 = 0b1000 in
-  if nes2 then
-    raise (Invalid_ROM "NES 2.0 ROM format not supported")
-  else {
+  if nes2 then raise (Invalid_ROM "NES 2.0 ROM format not supported")
+  else
+    {
       prg_rom_size = rom.(4) * 0x4000;
       chr_rom_size = rom.(5) * 0x2000;
       mirroring = nth_bit rom.(6) 0;
@@ -83,7 +83,7 @@ let read_header rom =
       playchoice_10 = nth_bit rom.(7) 1;
       prg_ram_size = rom.(8);
       mapper_nb = (rom.(6) lsr 4) lor (rom.(7) land 0xF0);
-      tv_system = if nth_bit rom.(9) 0 then `PAL else `NTSC
+      tv_system = (if nth_bit rom.(9) 0 then `PAL else `NTSC);
     }
 
 let load path =

@@ -29,8 +29,9 @@ module type S = sig
   open Stdint
 
   type t
+  type mapper
 
-  val create : Rom.t -> C6502.NMI.t -> t
+  val create : mapper -> C6502.NMI.t -> t
   val frame : t -> int
   val get_register : t -> int -> uint8
   val set_register : t -> int -> uint8 -> unit
@@ -48,7 +49,9 @@ module type S = sig
   end
 end
 
-module Make (M : C6502.MemoryMap with type input := Rom.t) = struct
+module Make (M : Mapper.S) = struct
+  type mapper = M.t
+
   (** Main memory *)
   module Mem = struct
     type t = {
@@ -59,9 +62,9 @@ module Make (M : C6502.MemoryMap with type input := Rom.t) = struct
       mutable bus_latch : U8.t;
     }
 
-    let create input =
+    let create mapper =
       {
-        mem = M.create input;
+        mem = mapper;
         address = 0U;
         temp_address = 0U;
         (* 15-bit *)
@@ -83,6 +86,8 @@ module Make (M : C6502.MemoryMap with type input := Rom.t) = struct
       else
         let v = v $& 0x3F1FU in
         if v $& 0x7U = 0U then v $& ?~0x10U else v
+
+    module M = M.PPU
 
     let set t x = M.write t.mem (address_indirection t.address) x
     let get t v = M.read t.mem (address_indirection v)
@@ -297,9 +302,9 @@ module Make (M : C6502.MemoryMap with type input := Rom.t) = struct
     mutable should_render : Stdint.uint8 option;
   }
 
-  let create input nmi =
+  let create mapper nmi =
     {
-      memory = Mem.create input;
+      memory = Mem.create mapper;
       oam = OAM.create ();
       control = Control.create ();
       graphics = Graphics.create ();
