@@ -12,10 +12,9 @@ type rom_config = {
   four_screen_vram : bool;
   vs_unisystem : bool;
   playchoice_10 : bool;
-  nes_2_0 : bool;
   prg_ram_size : int;
   mapper_nb : int;
-  tv_system : bool;
+  tv_system : [`NTSC | `PAL];
 }
 (** The various iNES header attributes *)
 
