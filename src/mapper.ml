@@ -193,12 +193,16 @@ module MMC1 : S = struct
       match U16.(a $& 0xE000U |> to_int) with
       | 0x8000 -> write_control t v
       | 0xA000 ->
-          if t.chr.mode_4k then t.chr.selected_1 <- ?%v
-          else t.chr.selected_1 <- ?%(v $& 0x1Eu)
-      | 0xC000 -> if t.chr.mode_4k then t.chr.selected_1 <- ?%v
+          if t.chr.mode_4k then
+            t.chr.selected_0 <- ?%v mod Array.length t.chr.banks
+          else t.chr.selected_0 <- ?%(v $& 0x1Eu) mod Array.length t.chr.banks
+      | 0xC000 ->
+          if t.chr.mode_4k then
+            t.chr.selected_1 <- ?%v mod Array.length t.chr.banks
       | 0xE000 ->
-          if t.prg.mode < 2 (* 32 Kb mode *) then t.prg.selected <- ?%(v $& 0xEu)
-          else t.prg.selected <- ?%v
+          if t.prg.mode < 2 (* 32 Kb mode *) then
+            t.prg.selected <- ?%(v $& 0xEu) mod Array.length t.prg.banks
+          else t.prg.selected <- ?%v mod Array.length t.prg.banks
       | _ -> assert false
 
     let write t a v =
@@ -228,7 +232,7 @@ module MMC1 : S = struct
       else
         let selected =
           match t.prg.mode with
-          | 0 | 1 -> t.prg.selected + 1
+          | 0 | 1 -> (t.prg.selected + 1) mod Array.length t.prg.banks
           | 3 -> Array.length t.prg.banks - 1
           | 2 -> t.prg.selected
           | _ -> assert false
@@ -256,7 +260,9 @@ module MMC1 : S = struct
       else if a < 0x1FFFU then
         if t.chr.mode_4k then
           t.chr.banks.(t.chr.selected_1).(a $& 0x0FFFU |> to_int)
-        else t.chr.banks.(Stdlib.succ t.chr.selected_0).(a $& 0x0FFFU |> to_int)
+        else
+          t.chr.banks.(Stdlib.succ t.chr.selected_0 mod Array.length t.chr.banks).(
+          a $& 0x0FFFU |> to_int)
       else t.chr.ram.(nametable_mirroring t a |> U16.to_int)
 
     let write t a v =
@@ -268,8 +274,8 @@ module MMC1 : S = struct
         if t.chr.mode_4k then
           t.chr.banks.(t.chr.selected_1).(a $& 0x0FFFU |> to_int) <- v
         else
-          t.chr.banks.(Stdlib.succ t.chr.selected_0).(a $& 0x0FFFU |> to_int) <-
-            v
+          t.chr.banks.(Stdlib.succ t.chr.selected_0 mod Array.length t.chr.banks).(
+          a $& 0x0FFFU |> to_int) <- v
       else t.chr.ram.(nametable_mirroring t a |> U16.to_int) <- v
   end
 end
