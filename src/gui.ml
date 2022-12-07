@@ -149,6 +149,7 @@ module Enabled (D : Display.S) : S = struct
     (board, start, fps)
 
   let create cli_flags =
+    Theme.set_scale 0.8;
     let display = Ppu_display.create D.create cli_flags in
     let state = { anim = false; gui_shown = false; continue = true } in
     let window = D.get_window display in
