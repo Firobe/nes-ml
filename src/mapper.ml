@@ -184,6 +184,14 @@ module MMC1 : S = struct
         | 3 -> Horizontal
         | _ -> assert false
       in
+      (* Copy active table when switching mirroring
+       * there's probably a better solution ...*)
+      (match (t.mirroring, mirroring) with
+      | Vertical, Horizontal ->
+          Array.blit t.chr.ram 0x2400 t.chr.ram 0x2800 0x400
+      | Horizontal, Vertical ->
+          Array.blit t.chr.ram 0x2800 t.chr.ram 0x2400 0x400
+      | _ -> ());
       t.mirroring <- mirroring;
       t.chr.mode_4k <- U8.(v $& 0x10u <> 0u);
       t.prg.mode <- U8.(v $& 0xCu $>> 2 |> to_int)
@@ -257,26 +265,26 @@ module MMC1 : S = struct
       let open U16 in
       if a <= 0x0FFFU then
         t.chr.banks.(t.chr.selected_0).(a $& 0x0FFFU |> to_int)
-      else if a < 0x1FFFU then
+      else if a <= 0x1FFFU then
         if t.chr.mode_4k then
           t.chr.banks.(t.chr.selected_1).(a $& 0x0FFFU |> to_int)
         else
           t.chr.banks.(Stdlib.succ t.chr.selected_0 mod Array.length t.chr.banks).(
           a $& 0x0FFFU |> to_int)
-      else t.chr.ram.(nametable_mirroring t a |> U16.to_int)
+      else t.chr.ram.(?%a)
 
     let write t a v =
       let a = indirection t a in
       let open U16 in
       if a <= 0x0FFFU then
         t.chr.banks.(t.chr.selected_0).(a $& 0x0FFFU |> to_int) <- v
-      else if a < 0x1FFFU then
+      else if a <= 0x1FFFU then
         if t.chr.mode_4k then
           t.chr.banks.(t.chr.selected_1).(a $& 0x0FFFU |> to_int) <- v
         else
           t.chr.banks.(Stdlib.succ t.chr.selected_0 mod Array.length t.chr.banks).(
           a $& 0x0FFFU |> to_int) <- v
-      else t.chr.ram.(nametable_mirroring t a |> U16.to_int) <- v
+      else t.chr.ram.(?%a) <- v
   end
 end
 
