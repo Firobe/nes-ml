@@ -148,23 +148,18 @@ struct
     let set_pixel = G.set_pixel t.io.main_window in
     let rec aux frame =
       if G.continue t.io.main_window then
-        if
+        if G.shown t.io.main_window then (
           (* Stop emulation when GUI is displayed, and don't collect inputs *)
-          G.shown t.io.main_window
-        then (
           G.render t.io.main_window;
-          aux (frame + 1) (* Normal emulation *))
+          aux (frame + 1))
         else (
+          (* Normal emulation *)
           if frame mod 100 = 0 then I.get_inputs t.state.input callbacks;
-          let old = NES.cycle_count t.state.cpu in
           NES.next_cycle t.state.cpu;
-          let elapsed = NES.cycle_count t.state.cpu - old in
-          for _ = 1 to elapsed do
-            A.next_cycle t.state.apu
-          done;
-          for _ = 1 to elapsed * 3 do
-            P.next_cycle t.state.ppu set_pixel
-          done;
+          A.next_cycle t.state.apu;
+          P.next_cycle t.state.ppu set_pixel;
+          P.next_cycle t.state.ppu set_pixel;
+          P.next_cycle t.state.ppu set_pixel;
           (match P.should_render t.state.ppu with
           | None -> ()
           | Some bg_color ->
