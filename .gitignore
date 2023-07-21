@@ -1,3 +1,4 @@
 *.sav
 _build
 *.sav*
+*.nes
